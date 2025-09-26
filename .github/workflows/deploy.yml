@@ -22,7 +22,12 @@ jobs:
         run: yarn install
         
       - name: Build project directly to target directory
-        run: yarn build --outDir ${{ secrets.DISTRIBUTION_PATH }}
+      
+        run: |
+          set -a
+          source ${{ secrets.ENV_FILE_PATH }}
+          set +a
+          yarn build --outDir ${{ secrets.DISTRIBUTION_PATH }} --emptyOutDir
         
       - name: Reload nginx
         run: |
