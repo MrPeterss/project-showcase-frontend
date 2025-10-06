@@ -14,7 +14,7 @@ import {
 export const useAuth = () => {
   const dispatch = useAppDispatch()
   const userState = useAppSelector((state) => state.user)
-  
+
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null)
 
   const syncUser = useCallback(async () => {
@@ -37,7 +37,7 @@ export const useAuth = () => {
         try {
           const idToken = await user.getIdToken()
           localStorage.setItem('firebase_token', idToken)
-          
+
           await syncUser()
         } catch (error) {
           console.error('Error syncing user:', error)
@@ -84,13 +84,13 @@ export const useAuth = () => {
     user: userState.user,
     isLoading: userState.isLoading,
     error: userState.error,
-    
+
     // Local state
     firebaseUser,
-    
+
     // Computed state
     isAuthenticated: !!userState.user,
-    
+
     // Actions
     signIn: signInWithGoogle,
     signOut: signOutUser,
