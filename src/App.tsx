@@ -11,8 +11,7 @@ import { QueryErrorBoundary } from './components/ErrorBoundary';
 import { NavBar } from './components/NavBar';
 import { Dashboard } from './pages/Dashboard';
 import { Projects } from './pages/Projects';
-
-// const { isAuthenticated } = useAuth();
+import LoginCard from './components/LoginCard';
 
 function App() {
   return (
@@ -20,7 +19,6 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <QueryErrorBoundary>
           <BrowserRouter>
-            {/* {isAuthenticated ? <AppShell /> : <LoginCard />} */}
             <div className="min-h-svh">
               <NavBar />
               <main className="mx-auto max-w-6xl px-4 py-6">
@@ -31,6 +29,7 @@ function App() {
                     path="/"
                     element={<Navigate to="/dashboard" replace />}
                   />
+                  <Route path="/login" element={<LoginCard />} />
                 </Routes>
               </main>
             </div>

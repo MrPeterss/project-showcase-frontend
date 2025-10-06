@@ -2,7 +2,7 @@ import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from '
 import { auth } from './firebase'
 
 // Base API configuration
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+export const API_BASE_URL = '/api'
 
 // Create Axios instance
 export const apiClient = axios.create({
