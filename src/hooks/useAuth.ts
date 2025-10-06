@@ -26,6 +26,7 @@ export const useAuth = () => {
       dispatch(setError(errorMessage))
       throw error
     }
+  }, [dispatch])
 
   useEffect(() => {
     const unsubscribe = onIdTokenChanged(auth, async (user) => {
