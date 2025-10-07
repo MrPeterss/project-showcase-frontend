@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
-import type { Semester, CreateSemesterData, UpdateSemesterData } from '@/services'
+import type { Semester } from '@/services'
 
 export interface SemestersState {
   semesters: Semester[]

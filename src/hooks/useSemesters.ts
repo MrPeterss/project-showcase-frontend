@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { services } from '@/services'
-import type { Semester, CreateSemesterData, UpdateSemesterData } from '@/services/types'
+import type { CreateSemesterData, UpdateSemesterData } from '@/services/types'
 
 // Query keys for React Query
 export const semesterKeys = {
