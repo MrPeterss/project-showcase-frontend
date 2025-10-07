@@ -1,10 +1,9 @@
 import { api, type ApiResponse } from '@/lib/api'
-import type { User } from './types'
 
 // Auth Services
 export const authServices = {
-  syncUser: (): Promise<ApiResponse<User>> =>
-    api.get('/teams/me'),
+  verifyToken: (firebaseToken: string): Promise<ApiResponse<{ accessToken: string }>> =>
+    api.post('/auth/verify-token', { firebaseToken }),
 }
 
 export default authServices

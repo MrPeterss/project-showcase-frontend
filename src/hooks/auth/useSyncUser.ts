@@ -1,50 +1,56 @@
 import { useMutation, type UseMutationOptions } from '@tanstack/react-query'
 import { AxiosError } from 'axios'
 import { services } from '@/services'
-import type { User } from '@/services'
 import type { ApiResponse } from '@/lib/api'
 
 /**
- * Hook for syncing a Firebase user with the backend API
+ * Hook for verifying Firebase token with the backend API
  * 
- * This mutation is used after Firebase authentication to sync the user with your backend.
- * The idToken is automatically sent in the Authorization header via the API client interceptor.
+ * This mutation is used after Firebase authentication to verify the Firebase token
+ * with your backend and get an access token in return. After verification, you'll
+ * need to call /users/me to get the user information.
  * 
  * @param options - Optional React Query mutation options
- * @returns Mutation object for syncing Firebase user data with the backend
+ * @returns Mutation object for verifying Firebase token with the backend
  * 
  * @example
  * ```tsx
- * const syncUser = useSyncUser({
- *   onSuccess: (response) => {
- *     const user = response.data
- *     console.log('User synced successfully:', user.displayName)
- *     // The user object contains your backend user representation
+ * import { api } from '@/lib/api'
+ * 
+ * const verifyToken = useVerifyToken({
+ *   onSuccess: async (response) => {
+ *     const { accessToken } = response.data
+ *     localStorage.setItem('access_token', accessToken)
+ *     
+ *     // Get user information after token verification
+ *     const userResponse = await api.get('/users/me')
+ *     console.log('Token verified successfully, user:', userResponse.data)
  *   },
  *   onError: (error) => {
- *     console.error('Failed to sync user:', error.message)
+ *     console.error('Failed to verify token:', error.message)
  *   }
  * })
  * 
  * // Called after Firebase sign-in
  * const handleFirebaseSignIn = async () => {
  *   const result = await signInWithPopup(auth, googleProvider)
- *   const idToken = await result.user.getIdToken()
+ *   const firebaseToken = await result.user.getIdToken()
  *   
- *   // Save token to localStorage for API requests
- *   localStorage.setItem('firebase_token', idToken)
+ *   // Save Firebase token to localStorage
+ *   localStorage.setItem('firebase_token', firebaseToken)
  *   
- *   // Sync user with backend (token is automatically included in request)
- *   const response = await syncUser.mutateAsync()
- *   const backendUser = response.data // This is your backend user representation
+ *   // Verify token with backend to get access token
+ *   const response = await verifyToken.mutateAsync(firebaseToken)
+ *   const { accessToken } = response.data
+ *   localStorage.setItem('access_token', accessToken)
  * }
  * ```
  */
-export const useSyncUser = (
-  options?: UseMutationOptions<ApiResponse<User>, AxiosError, void>
+export const useVerifyToken = (
+  options?: UseMutationOptions<ApiResponse<{ accessToken: string }>, AxiosError, string>
 ) => {
   return useMutation({
-    mutationFn: () => services.auth.syncUser(),
+    mutationFn: (firebaseToken: string) => services.auth.verifyToken(firebaseToken),
     ...options,
   })
 }

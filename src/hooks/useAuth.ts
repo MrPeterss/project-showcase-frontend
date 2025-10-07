@@ -3,6 +3,7 @@ import { onIdTokenChanged, signInWithPopup, signOut } from 'firebase/auth'
 import type { User as FirebaseUser } from 'firebase/auth'
 import { auth, googleProvider } from '@/lib/firebase'
 import { services } from '@/services'
+import { api } from '@/lib/api'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import {
   setUser,
@@ -19,10 +20,20 @@ export const useAuth = () => {
 
   const syncUser = useCallback(async () => {
     try {
-      const response = await services.auth.syncUser()
-      dispatch(setUser(response.data))
+      const firebaseToken = localStorage.getItem('firebase_token')
+      if (!firebaseToken) {
+        throw new Error('No Firebase token available')
+      }
+      
+      // Verify token with backend to get access token
+      const response = await services.auth.verifyToken(firebaseToken)
+      localStorage.setItem('access_token', response.data.accessToken)
+      
+      // Get user information from /users/me endpoint
+      const userResponse = await api.get('/users/me')
+      dispatch(setUser(userResponse.data))
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to sync user'
+      const errorMessage = error instanceof Error ? error.message : 'Failed to verify token'
       dispatch(setError(errorMessage))
       throw error
     }
@@ -46,6 +57,7 @@ export const useAuth = () => {
         }
       } else {
         localStorage.removeItem('firebase_token')
+        localStorage.removeItem('access_token')
         dispatch(clearUser())
       }
 
@@ -70,6 +82,7 @@ export const useAuth = () => {
     dispatch(setError(null))
     try {
       localStorage.removeItem('firebase_token')
+      localStorage.removeItem('access_token')
       await signOut(auth)
       setFirebaseUser(null)
       dispatch(clearUser())

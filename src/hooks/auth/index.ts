@@ -1,1 +1,1 @@
-export { useSyncUser } from './useSyncUser'
+export { useVerifyToken } from './useSyncUser'

@@ -17,10 +17,10 @@ export const apiClient = axios.create({
 apiClient.interceptors.request.use(
   async (config) => {
     try {
-      // Get token from localStorage
-      const token = localStorage.getItem('firebase_token')
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`
+      const accessToken = localStorage.getItem('access_token')
+      
+      if (accessToken) {
+        config.headers.Authorization = `Bearer ${accessToken}`
       }
     } catch (error) {
       console.error('Error getting auth token:', error)
@@ -47,20 +47,30 @@ apiClient.interceptors.response.use(
       try {
         const currentUser = auth.currentUser
         if (currentUser) {
-          // Force refresh the token
-          const newToken = await currentUser.getIdToken(true)
-          // Save refreshed token to localStorage
-          localStorage.setItem('firebase_token', newToken)
+          // Force refresh the Firebase token
+          const newFirebaseToken = await currentUser.getIdToken(true)
+          // Save refreshed Firebase token to localStorage
+          localStorage.setItem('firebase_token', newFirebaseToken)
 
+          // Verify the token with the backend to get a new access token
+          const verifyResponse = await axios.post(`${API_BASE_URL}/auth/verify-token`, { firebaseToken: newFirebaseToken })
+          const newAccessToken = verifyResponse.data.data.accessToken
+          
+          // Save the new access token
+          localStorage.setItem('access_token', newAccessToken)
+
+          // Update the request headers with the new access token
           if (originalRequest.headers) {
-            originalRequest.headers.Authorization = `Bearer ${newToken}`
+            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
           }
+          
           return apiClient(originalRequest)
         }
       } catch (refreshError) {
         // Token refresh failed, log user out
         console.error('Token refresh failed:', refreshError)
         localStorage.removeItem('firebase_token')
+        localStorage.removeItem('access_token')
 
         // Sign out from Firebase
         try {
@@ -94,19 +104,19 @@ export interface ApiError {
 // Generic API methods
 export const api = {
   get: <T = any>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> =>
-    apiClient.get(url, config).then(res => res.data),
+    apiClient.get(url, config),
 
   post: <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> =>
-    apiClient.post(url, data, config).then(res => res.data),
+    apiClient.post(url, data, config),
 
   put: <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> =>
-    apiClient.put(url, data, config).then(res => res.data),
+    apiClient.put(url, data, config),
 
   patch: <T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<ApiResponse<T>> =>
-    apiClient.patch(url, data, config).then(res => res.data),
+    apiClient.patch(url, data, config),
 
   delete: <T = any>(url: string, config?: AxiosRequestConfig): Promise<ApiResponse<T>> =>
-    apiClient.delete(url, config).then(res => res.data),
+    apiClient.delete(url, config),
 }
 
 export default api

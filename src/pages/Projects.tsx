@@ -1,64 +1,35 @@
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { teams } from "@/services/dummyData"
-import { Link } from "react-router-dom"
+import { Card, CardContent } from '@/components/ui/card';
 
-const formatWhen = (iso: string) => new Date(iso).toLocaleString()
-
-export function Projects() {
+export default function Projects() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Projects</CardTitle>
-      </CardHeader>
-
-      <CardContent className="space-y-4">
-        {/* Header row */}
-        <div className="hidden grid-cols-[80px_1fr_140px_220px_100px] gap-3 px-2 text-sm opacity-60 md:grid">
-          <div className="text-left">ID</div>
-          <div className="text-left">Team</div>
-          <div className="text-left">Members</div>
-          <div className="text-left">Last Updated</div>
-          <div className="text-right">Action</div>
-        </div>
-
-        <div className="divide-y">
-          {teams.map((t) => (
-            <div
-              key={t.id}
-              className="grid grid-cols-1 gap-2 py-3 md:grid-cols-[80px_1fr_140px_220px_100px] md:items-center md:gap-3 md:py-2"
-            >
-              {/* ID */}
-              <div className="font-mono text-sm text-left opacity-80">{t.id}</div>
-
-              {/* Team name (link) */}
-              <div className="flex items-center justify-between md:block">
-                <Link
-                  to={t.link}
-                  className="font-medium text-primary text-left underline-offset-4 hover:underline"
-                >
-                  {t.name}
-                </Link>
-              </div>
-
-              {/* Members */}
-              <div className="text-sm text-left md:text-base md:opacity-90">
-                {t.memberCount}
-              </div>
-
-              {/* Last updated */}
-              <div className="text-sm text-left opacity-80">{formatWhen(t.lastUpdated)}</div>
-
-              {/* Action */}
-              <div className="text-right">
-                <Button asChild size="sm" variant="secondary">
-                  <Link to={t.link}>Open</Link>
-                </Button>
-              </div>
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Card className="w-full max-w-md">
+          <CardContent className="py-12 text-center">
+            <div className="text-gray-400 mb-6">
+              <svg
+                className="mx-auto h-16 w-16"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                />
+              </svg>
             </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  )
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Under Construction
+            </h1>
+            <div className="text-sm text-gray-500">
+              <p>🚧 Coming Soon 🚧</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 }

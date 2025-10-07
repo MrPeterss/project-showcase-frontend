@@ -9,8 +9,10 @@ import { QueryErrorBoundary } from './components/ErrorBoundary';
 // import LoginCard from './components/LoginCard';
 // import { useAuth } from "@/hooks/useAuth";
 import { NavBar } from './components/NavBar';
-import { Dashboard } from './pages/Dashboard';
-import { Projects } from './pages/Projects';
+import Dashboard from './pages/Dashboard';
+import Projects from './pages/Projects';
+import Admin from './pages/Admin';
+import Courses from './pages/Courses';
 import LoginCard from './components/LoginCard';
 
 function App() {
@@ -21,15 +23,14 @@ function App() {
           <BrowserRouter>
             <div className="min-h-svh">
               <NavBar />
-              <main className="mx-auto max-w-6xl px-4 py-6">
+              <main className="mx-auto max-w-6xl">
                 <Routes>
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/projects" element={<Projects />} />
-                  <Route
-                    path="/"
-                    element={<Navigate to="/dashboard" replace />}
-                  />
+                  <Route path="/admin" element={<Admin />} />
+                  <Route path="/courses" element={<Courses />} />
                   <Route path="/login" element={<LoginCard />} />
+                  <Route path="/" element={<Navigate to="/login" replace />} />
                 </Routes>
               </main>
             </div>

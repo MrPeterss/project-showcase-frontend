@@ -8,6 +8,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { getRouteForRole } from '@/lib/routing';
 
 const initials = (name?: string | null) => {
   if (!name) return 'U';
@@ -16,8 +19,24 @@ const initials = (name?: string | null) => {
 };
 
 const LoginCard = () => {
-  const { firebaseUser, isAuthenticated, isLoading, error, signIn, signOut } =
-    useAuth();
+  const {
+    firebaseUser,
+    isAuthenticated,
+    isLoading,
+    error,
+    signIn,
+    signOut,
+    user,
+  } = useAuth();
+  const navigate = useNavigate();
+
+  // Redirect to appropriate page based on user role when authenticated
+  useEffect(() => {
+    if (isAuthenticated && user?.role) {
+      const route = getRouteForRole(user.role);
+      navigate(route, { replace: true });
+    }
+  }, [isAuthenticated, user?.role, navigate]);
 
   return (
     <div className="min-h-svh grid place-items-center p-6">
@@ -53,7 +72,16 @@ const LoginCard = () => {
                 </div>
               </div>
 
-              <Button variant="default" disabled={isLoading}>
+              <Button
+                variant="default"
+                disabled={isLoading}
+                onClick={() => {
+                  if (user?.role) {
+                    const route = getRouteForRole(user.role);
+                    navigate(route, { replace: true });
+                  }
+                }}
+              >
                 Continue
               </Button>
 
