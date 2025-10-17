@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Plus } from 'lucide-react';
-import { Button } from './button';
 
 interface SelectOption {
   value: string;

@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { CustomSelect } from '@/components/ui/custom-select';
+import { Pencil, Trash2, Edit } from 'lucide-react';
 import {
   NewSemesterModal,
   EditSemesterModal,
@@ -21,16 +22,129 @@ import {
   selectSelectedSemesterId,
 } from '@/store/selectors/coursesSelectors';
 import { selectAllSemesters } from '@/store/selectors/semestersSelectors';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Course, Semester } from '@/services';
+
+// Course Cell Component
+interface CourseCellProps {
+  course: Course;
+  userRole: string | undefined;
+  onEdit: (course: Course) => void;
+  onDelete: (courseId: number) => void;
+  isDeleting: boolean;
+}
+
+function CourseCell({ course, userRole, onEdit, onDelete, isDeleting }: CourseCellProps) {
+  const navigate = useNavigate();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  const handleCourseClick = () => {
+    navigate(`/courses/${course.id}`);
+  };
+
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onEdit(course);
+    setShowDropdown(false);
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete(course.id);
+    setShowDropdown(false);
+  };
+
+  return (
+    <div className="relative group">
+      <div
+        className="bg-white border border-gray-200 rounded-lg cursor-pointer hover:shadow-md hover:border-blue-300 transition-all duration-200 h-full"
+        onClick={handleCourseClick}
+      >
+        <div className="flex flex-col h-full">
+          <div className="bg-red-700 p-3 rounded-t-lg">
+            <h4 className="font-semibold text-white text-base mb-2 line-clamp-2">
+              {course.department} {course.number}
+            </h4>
+          </div>
+          <div className="flex-1 p-4">
+            <p className="text-gray-600 text-sm line-clamp-2 mb-3">
+              {course.name}
+            </p>
+          </div>
+          
+          <div className="flex items-center justify-between p-4 pt-0">
+            <Badge variant="outline" className="text-xs">
+              {course.semester?.shortName || `Semester ID: ${course.semesterId}`}
+            </Badge>
+            
+            {userRole === 'ADMIN' && (
+              <div className="relative" ref={dropdownRef}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 hover:text-white rounded-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowDropdown(!showDropdown);
+                  }}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                
+                {showDropdown && (
+                  <div className="absolute right-0 top-10 w-32 bg-white border border-gray-200 rounded-md shadow-lg z-50">
+                    <div className="py-1">
+                      <button
+                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                        onClick={handleEditClick}
+                      >
+                        <Edit className="h-3 w-3" />
+                        Edit
+                      </button>
+                      <button
+                        className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                        onClick={handleDeleteClick}
+                        disabled={isDeleting}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Courses() {
   const dispatch = useAppDispatch();
 
-  // Only allow ADMIN and INSTRUCTOR roles to access this page
+  // Allow all roles to access this page
   const { hasAccess, userRole, isLoading } = useRoleAccess([
     'ADMIN',
     'INSTRUCTOR',
+    'STUDENT',
   ]);
 
   // Redux selectors
@@ -139,7 +253,11 @@ export default function Courses() {
           {/* Admin Controls */}
           {userRole === 'ADMIN' && (
             <div className="flex items-center gap-3">
-              <Button size="sm" onClick={() => setIsNewCourseModalOpen(true)}>
+              <Button 
+                size="sm" 
+                onClick={() => setIsNewCourseModalOpen(true)}
+                className="bg-red-700 hover:bg-red-800 text-white"
+              >
                 Add Course
               </Button>
             </div>
@@ -182,7 +300,7 @@ export default function Courses() {
                   handleEditSemester(semester);
                 }
               }}
-              className="h-10"
+              className="h-10 border-red-700 text-red-700 hover:bg-red-700 hover:text-white"
             >
               Edit Semester
             </Button>
@@ -191,9 +309,9 @@ export default function Courses() {
       </div>
 
       {/* Course List */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
+      <Card className="border-0 shadow-none">
+        <CardHeader className="px-0">
+          <CardTitle className="text-left">
             {selectedSemesterId && semesters
               ? `${
                   semesters.find((s) => s.id.toString() === selectedSemesterId)
@@ -202,7 +320,7 @@ export default function Courses() {
               : 'All Courses'}
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0">
           {coursesLoading ? (
             <p className="text-muted-foreground">Loading courses...</p>
           ) : coursesError ? (
@@ -212,69 +330,17 @@ export default function Courses() {
           ) : courses && courses.length > 0 ? (
             // Show courses organized by semester if "All Semesters" is selected
             selectedSemesterId ? (
-              // Single semester view
-              <div className="space-y-2">
+              // Single semester view - display as grid of cells
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {courses.map((course) => (
-                  <div
+                  <CourseCell
                     key={course.id}
-                    className={`flex justify-between items-center p-3 border rounded-lg ${
-                      userRole === 'INSTRUCTOR'
-                        ? 'cursor-pointer hover:bg-gray-50'
-                        : ''
-                    }`}
-                    onClick={() => {
-                      if (userRole === 'INSTRUCTOR') {
-                        // TODO: Navigate to course management page for instructors
-                        console.log(
-                          'Navigate to course management for:',
-                          course
-                        );
-                      }
-                    }}
-                  >
-                    <div className="flex-1 text-left">
-                      <h4 className="font-medium">
-                        {course.department} {course.number} - {course.name}
-                      </h4>
-                      <div className="mt-1">
-                        <Badge variant="outline" className="text-xs">
-                          {course.semester?.shortName ||
-                            `Semester ID: ${course.semesterId}`}
-                        </Badge>
-                      </div>
-                    </div>
-
-                    {/* Admin-only buttons */}
-                    {userRole === 'ADMIN' && (
-                      <div
-                        className="flex gap-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEditCourse(course)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => handleDeleteCourse(course.id)}
-                          disabled={isDeletingCourse}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    )}
-
-                    {/* Instructor-only indicator */}
-                    {userRole === 'INSTRUCTOR' && (
-                      <div className="text-sm text-muted-foreground">
-                        Click to manage students & teams
-                      </div>
-                    )}
-                  </div>
+                    course={course}
+                    userRole={userRole}
+                    onEdit={handleEditCourse}
+                    onDelete={handleDeleteCourse}
+                    isDeleting={isDeletingCourse}
+                  />
                 ))}
               </div>
             ) : (
@@ -302,13 +368,16 @@ export default function Courses() {
                 return (
                   <div className="space-y-6">
                     {sortedSemesters.map((semester) => (
-                      <div key={semester.id} className="space-y-3">
+                      <div key={semester.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
                         {/* Semester Header */}
-                        <div className="flex items-center gap-3 pb-2 border-b border-gray-200">
-                          <h3 className="text-lg font-semibold text-gray-900">
-                            {semester.shortName}
-                          </h3>
-                          <Badge variant="outline" className="text-sm">
+                        <div className="flex items-center gap-3 pb-3 mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-1 h-6 bg-red-700 rounded-full"></div>
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              {semester.shortName}
+                            </h3>
+                          </div>
+                          <Badge variant="outline" className="text-sm border-red-700 text-red-700">
                             {coursesBySemester[semester.id].length} course
                             {coursesBySemester[semester.id].length !== 1
                               ? 's'
@@ -316,72 +385,17 @@ export default function Courses() {
                           </Badge>
                         </div>
 
-                        {/* Courses for this semester */}
-                        <div className="space-y-2">
+                        {/* Courses for this semester - display as grid of cells */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                           {coursesBySemester[semester.id].map((course) => (
-                            <div
+                            <CourseCell
                               key={course.id}
-                              className={`flex justify-between items-center p-3 border rounded-lg ${
-                                userRole === 'INSTRUCTOR'
-                                  ? 'cursor-pointer hover:bg-gray-50'
-                                  : ''
-                              }`}
-                              onClick={() => {
-                                if (userRole === 'INSTRUCTOR') {
-                                  // TODO: Navigate to course management page for instructors
-                                  console.log(
-                                    'Navigate to course management for:',
-                                    course
-                                  );
-                                }
-                              }}
-                            >
-                              <div className="flex-1 text-left">
-                                <h4 className="font-medium">
-                                  {course.department} {course.number} -{' '}
-                                  {course.name}
-                                </h4>
-                                <div className="mt-1">
-                                  <Badge variant="outline" className="text-xs">
-                                    {course.semester?.shortName ||
-                                      `Semester ID: ${course.semesterId}`}
-                                  </Badge>
-                                </div>
-                              </div>
-
-                              {/* Admin-only buttons */}
-                              {userRole === 'ADMIN' && (
-                                <div
-                                  className="flex gap-2"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleEditCourse(course)}
-                                  >
-                                    Edit
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="destructive"
-                                    onClick={() =>
-                                      handleDeleteCourse(course.id)
-                                    }
-                                    disabled={isDeletingCourse}
-                                  >
-                                    Delete
-                                  </Button>
-                                </div>
-                              )}
-
-                              {/* Instructor-only indicator */}
-                              {userRole === 'INSTRUCTOR' && (
-                                <div className="text-sm text-muted-foreground">
-                                  Click to manage students & teams
-                                </div>
-                              )}
-                            </div>
+                              course={course}
+                              userRole={userRole}
+                              onEdit={handleEditCourse}
+                              onDelete={handleDeleteCourse}
+                              isDeleting={isDeletingCourse}
+                            />
                           ))}
                         </div>
                       </div>
