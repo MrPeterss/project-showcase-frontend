@@ -190,7 +190,7 @@ export function CourseCell({
 
           {/* Footer with role badge and semester badge */}
           <div className="pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap">
-            {offering.userRole && (
+            {offering.userRole && !isAdmin && (
               <Badge
                 variant="outline"
                 className={`text-xs font-medium ${getRoleBadgeClassName()}`}
