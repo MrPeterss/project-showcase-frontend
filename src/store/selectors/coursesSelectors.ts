@@ -14,16 +14,18 @@ export const selectIsUpdatingCourse = (state: RootState) => state.courses.isUpda
 export const selectIsDeletingCourse = (state: RootState) => state.courses.isDeleting
 
 // Computed selectors
+// Note: Courses are templates and don't have semesterId
+// This selector is kept for backwards compatibility but returns all courses
 export const selectCoursesBySemester = (semesterId: number) => (state: RootState): Course[] => {
-  return state.courses.courses.filter(course => course.semesterId === semesterId)
+  // Courses don't have semesterId, so return all courses
+  // Semester filtering should be done at the CourseOffering level
+  return state.courses.courses
 }
 
 export const selectFilteredCourses = (state: RootState): Course[] => {
-  const { courses, selectedSemesterId } = state.courses
-  if (!selectedSemesterId) {
-    return courses
-  }
-  return courses.filter(course => course.semesterId === parseInt(selectedSemesterId))
+  // Courses don't have semesterId, so return all courses
+  // Semester filtering should be done at the CourseOffering level
+  return state.courses.courses
 }
 
 export const selectCourseById = (courseId: number) => (state: RootState): Course | undefined => {
@@ -37,18 +39,9 @@ export const selectFilteredCoursesCount = (state: RootState) => {
 }
 
 // Enhanced selector that enriches courses with semester data
+// Note: Courses are templates and don't have semesterId or semester relationships
 export const selectFilteredCoursesWithSemesters = (state: RootState): Course[] => {
-  const { courses, selectedSemesterId } = state.courses
-  const semesters = state.semesters.semesters
-  
-  let filteredCourses = courses
-  if (selectedSemesterId) {
-    filteredCourses = courses.filter(course => course.semesterId === parseInt(selectedSemesterId))
-  }
-  
-  // Enrich courses with semester data
-  return filteredCourses.map(course => ({
-    ...course,
-    semester: semesters.find(semester => semester.id === course.semesterId)
-  }))
+  // Courses don't have semesterId, so return all courses as-is
+  // Semester relationships exist at the CourseOffering level, not Course level
+  return state.courses.courses
 }

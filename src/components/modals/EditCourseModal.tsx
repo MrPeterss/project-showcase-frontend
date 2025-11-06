@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { useAppDispatch } from '@/store/hooks';
 import { updateCourseById, fetchCourses } from '@/store/thunks/coursesThunks';
-import { selectAllSemesters } from '@/store/selectors/semestersSelectors';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
-import { formatSemesterShortName } from '@/lib/semesterUtils';
 import type { Course } from '@/services';
 
 interface EditCourseModalProps {
@@ -17,14 +15,12 @@ interface FormData {
   department: string;
   number: string;
   name: string;
-  semesterId: string;
 }
 
 interface FormErrors {
   department?: string;
   number?: string;
   name?: string;
-  semesterId?: string;
   general?: string;
 }
 
@@ -34,13 +30,11 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
   course,
 }) => {
   const dispatch = useAppDispatch();
-  const semesters = useAppSelector(selectAllSemesters);
 
   const [formData, setFormData] = useState<FormData>({
     department: '',
     number: '',
     name: '',
-    semesterId: '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,7 +46,6 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
         department: course.department,
         number: course.number.toString(),
         name: course.name,
-        semesterId: course.semesterId.toString(),
       });
     }
   }, [course]);
@@ -85,11 +78,6 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
       newErrors.name = 'Course name must be at least 3 characters';
     }
 
-    // Validate semester
-    if (!formData.semesterId) {
-      newErrors.semesterId = 'Semester is required';
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -120,7 +108,6 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
             department: formData.department.trim(),
             number: parseInt(formData.number.trim()),
             name: formData.name.trim(),
-            semesterId: parseInt(formData.semesterId),
           },
         })
       ).unwrap();
@@ -230,34 +217,6 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
           />
           {errors.name && (
             <p className="mt-1 text-sm text-red-600">{errors.name}</p>
-          )}
-        </div>
-
-        <div>
-          <label
-            htmlFor="edit-semesterId"
-            className="block text-sm font-medium text-gray-700 mb-1"
-          >
-            Semester *
-          </label>
-          <select
-            id="edit-semesterId"
-            value={formData.semesterId}
-            onChange={(e) => handleInputChange('semesterId', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-              errors.semesterId ? 'border-red-300' : 'border-gray-300'
-            }`}
-            disabled={isSubmitting}
-          >
-            <option value="">Select a semester</option>
-            {semesters.map((semester) => (
-              <option key={semester.id} value={semester.id.toString()}>
-                {formatSemesterShortName(semester)}
-              </option>
-            ))}
-          </select>
-          {errors.semesterId && (
-            <p className="mt-1 text-sm text-red-600">{errors.semesterId}</p>
           )}
         </div>
 

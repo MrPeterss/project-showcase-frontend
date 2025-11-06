@@ -10,7 +10,6 @@ import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { CustomSelect } from '@/components/ui/custom-select';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
-import type { Course, Semester } from '@/services/types';
 
 interface NewCourseOfferingModalProps {
   isOpen: boolean;
@@ -101,7 +100,7 @@ export const NewCourseOfferingModal: React.FC<NewCourseOfferingModalProps> = ({
 
     try {
       // Create course offering using the new endpoint
-      const response = await services.courseOfferings.create({
+      await services.courseOfferings.create({
         courseId: parseInt(formData.courseId),
         semesterId: parseInt(formData.semesterId),
       });
