@@ -16,7 +16,7 @@ export const selectIsDeletingCourse = (state: RootState) => state.courses.isDele
 // Computed selectors
 // Note: Courses are templates and don't have semesterId
 // This selector is kept for backwards compatibility but returns all courses
-export const selectCoursesBySemester = (semesterId: number) => (state: RootState): Course[] => {
+export const selectCoursesBySemester = () => (state: RootState): Course[] => {
   // Courses don't have semesterId, so return all courses
   // Semester filtering should be done at the CourseOffering level
   return state.courses.courses
