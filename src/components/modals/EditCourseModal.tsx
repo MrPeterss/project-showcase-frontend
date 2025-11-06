@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { updateCourseById } from '@/store/thunks/coursesThunks';
+import { updateCourseById, fetchCourses } from '@/store/thunks/coursesThunks';
 import { selectAllSemesters } from '@/store/selectors/semestersSelectors';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
+import { formatSemesterShortName } from '@/lib/semesterUtils';
 import type { Course } from '@/services';
 
 interface EditCourseModalProps {
@@ -124,6 +125,10 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
         })
       ).unwrap();
 
+      // Refresh courses before closing modal
+      await dispatch(fetchCourses());
+
+      // Don't close modal until request completes successfully
       onClose();
     } catch (error) {
       setErrors({
@@ -247,7 +252,7 @@ export const EditCourseModal: React.FC<EditCourseModalProps> = ({
             <option value="">Select a semester</option>
             {semesters.map((semester) => (
               <option key={semester.id} value={semester.id.toString()}>
-                {semester.shortName}
+                {formatSemesterShortName(semester)}
               </option>
             ))}
           </select>

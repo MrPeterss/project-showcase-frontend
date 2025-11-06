@@ -6,18 +6,15 @@ import type { CreateCourseData, UpdateCourseData } from '@/services/types'
 export const courseKeys = {
   all: ['courses'] as const,
   lists: () => [...courseKeys.all, 'list'] as const,
-  list: (filters: Record<string, any>) => [...courseKeys.lists(), { filters }] as const,
+  list: () => [...courseKeys.lists()] as const,
   details: () => [...courseKeys.all, 'detail'] as const,
   detail: (id: number) => [...courseKeys.details(), id] as const,
 }
 
-export const useCourses = (filters?: { semesterId?: number }) => {
+export const useCourses = () => {
   return useQuery({
-    queryKey: courseKeys.list(filters || {}),
+    queryKey: courseKeys.list(),
     queryFn: async () => {
-      if (filters?.semesterId) {
-        return services.courses.getBySemester(filters.semesterId)
-      }
       return services.courses.getAll()
     },
     select: (response) => response.data,

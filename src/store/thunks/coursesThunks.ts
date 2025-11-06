@@ -13,21 +13,15 @@ import {
   removeCourse
 } from '../slices/coursesSlice'
 
-// Fetch all courses
+// Fetch all courses (templates only)
 export const fetchCourses = createAsyncThunk(
   'courses/fetchCourses',
-  async (filters: { semesterId?: number } | undefined, { dispatch }) => {
+  async (_, { dispatch }) => {
     try {
       dispatch(setLoading(true))
       dispatch(setError(null))
 
-      let response
-      if (filters?.semesterId) {
-        response = await services.courses.getBySemester(filters.semesterId)
-      } else {
-        response = await services.courses.getAll()
-      }
-
+      const response = await services.courses.getAll()
       dispatch(setCourses(response.data))
       return response.data
     } catch (error) {

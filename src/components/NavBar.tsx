@@ -70,13 +70,13 @@ export function NavBar() {
 
     if (user.role === 'STUDENT') {
       tabs.push(
-        { path: '/dashboard', label: 'Dashboard' },
-        { path: '/projects', label: 'Projects' }
+        { path: '/projects', label: 'Projects' },
+        { path: '/dashboard', label: 'Dashboard' }
       );
     } else if (user.role === 'ADMIN' || user.role === 'INSTRUCTOR') {
       tabs.push(
         { path: '/projects', label: 'Projects' },
-        { path: '/courses', label: 'Courses' }
+        { path: '/admin', label: 'Settings' }
       );
     }
 
@@ -152,15 +152,13 @@ export function NavBar() {
                   </div>
 
                   <div className="p-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <button
                       onClick={handleLogout}
-                      className="w-full justify-start gap-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      className="w-full flex items-center gap-2 text-red-600 hover:text-red-700 hover:bg-red-50 p-2 rounded text-left justify-start"
                     >
                       <LogOut className="h-4 w-4" />
-                      Sign Out
-                    </Button>
+                        Sign Out
+                    </button>
                   </div>
                 </div>
               )}

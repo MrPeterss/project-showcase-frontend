@@ -2,7 +2,7 @@ import type { Role } from '@/services/types'
 
 /**
  * Returns the appropriate route for a user based on their role
- * @param role - The user's role (ADMIN, INSTRUCTOR, or STUDENT)
+ * @param role - The user's role (ADMIN, INSTRUCTOR, STUDENT, or VIEWER)
  * @returns The route path the user should be redirected to
  */
 export const getRouteForRole = (role: Role): string => {
@@ -12,9 +12,11 @@ export const getRouteForRole = (role: Role): string => {
     case 'INSTRUCTOR':
       return '/courses'
     case 'STUDENT':
-      return '/dashboard'
+      return '/courses' // Students now also go to courses page first
+    case 'VIEWER':
+      return '/courses' // Viewers also go to courses page first
     default:
-      // Fallback to dashboard for any unexpected roles
-      return '/dashboard'
+      // Fallback to courses for any unexpected roles
+      return '/courses'
   }
 }

@@ -1,13 +1,21 @@
 export type { 
   User, 
-  Course, 
+  Course,
+  CourseOffering,
+  CourseOfferingSettings,
+  Enrollment,
   Semester, 
   Team,
+  TeamMember,
   ProjectType,
   Project,
   Role,
   CreateCourseData, 
-  UpdateCourseData, 
+  UpdateCourseData,
+  CreateCourseOfferingData,
+  UpdateCourseOfferingData,
+  CreateEnrollmentData,
+  UpdateEnrollmentData,
   CreateSemesterData, 
   UpdateSemesterData,
   CreateTeamData,
@@ -20,16 +28,25 @@ export type {
 
 export { default as authServices } from './auth'
 export { default as courseServices } from './courses'
+export { default as courseOfferingServices } from './courseOfferings'
+export { default as enrollmentServices } from './enrollments'
 export { default as semesterServices } from './semesters'
+export { default as teamServices } from './teams'
 
 import authServices from './auth'
 import courseServices from './courses'
+import courseOfferingServices from './courseOfferings'
+import enrollmentServices from './enrollments'
 import semesterServices from './semesters'
+import teamServices from './teams'
 
 export const services = {
   auth: authServices,
   courses: courseServices,
+  courseOfferings: courseOfferingServices,
+  enrollments: enrollmentServices,
   semesters: semesterServices,
+  teams: teamServices,
 }
 
 export default services
