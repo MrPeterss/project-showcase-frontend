@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppDispatch } from '@/store/hooks';
-import { updateSemesterById } from '@/store/thunks/semestersThunks';
+import { updateSemesterById, fetchSemesters } from '@/store/thunks/semestersThunks';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import type { Semester } from '@/services';
@@ -12,13 +12,15 @@ interface EditSemesterModalProps {
 }
 
 interface FormData {
-  shortName: string;
+  season: string;
+  year: string;
   startDate: string;
   endDate: string;
 }
 
 interface FormErrors {
-  shortName?: string;
+  season?: string;
+  year?: string;
   startDate?: string;
   endDate?: string;
   general?: string;
@@ -31,7 +33,8 @@ export const EditSemesterModal: React.FC<EditSemesterModalProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const [formData, setFormData] = useState<FormData>({
-    shortName: '',
+    season: '',
+    year: '',
     startDate: '',
     endDate: '',
   });
@@ -42,7 +45,8 @@ export const EditSemesterModal: React.FC<EditSemesterModalProps> = ({
   useEffect(() => {
     if (semester) {
       setFormData({
-        shortName: semester.shortName,
+        season: semester.season,
+        year: semester.year.toString(),
         startDate: semester.startDate.split('T')[0], // Convert to YYYY-MM-DD format
         endDate: semester.endDate.split('T')[0],
       });
@@ -52,11 +56,19 @@ export const EditSemesterModal: React.FC<EditSemesterModalProps> = ({
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {};
 
-    // Validate short name
-    if (!formData.shortName.trim()) {
-      newErrors.shortName = 'Short name is required';
-    } else if (formData.shortName.trim().length < 3) {
-      newErrors.shortName = 'Short name must be at least 3 characters';
+    // Validate season
+    if (!formData.season.trim()) {
+      newErrors.season = 'Season is required';
+    }
+
+    // Validate year
+    if (!formData.year.trim()) {
+      newErrors.year = 'Year is required';
+    } else {
+      const year = parseInt(formData.year.trim());
+      if (isNaN(year) || year < 2000 || year > 2100) {
+        newErrors.year = 'Year must be a valid number between 2000 and 2100';
+      }
     }
 
     // Validate dates
@@ -101,17 +113,27 @@ export const EditSemesterModal: React.FC<EditSemesterModalProps> = ({
     setErrors({});
 
     try {
+      // Convert date strings (YYYY-MM-DD) to ISO datetime strings
+      // Append 'T00:00:00Z' to ensure UTC midnight, then convert to ISO string
+      const startDateISO = new Date(formData.startDate + 'T00:00:00Z').toISOString();
+      const endDateISO = new Date(formData.endDate + 'T00:00:00Z').toISOString();
+
       await dispatch(
         updateSemesterById({
           id: semester.id,
           data: {
-            shortName: formData.shortName.trim(),
-            startDate: formData.startDate,
-            endDate: formData.endDate,
+            season: formData.season.trim(),
+            year: parseInt(formData.year.trim()),
+            startDate: startDateISO,
+            endDate: endDateISO,
           },
         })
       ).unwrap();
 
+      // Refresh semesters before closing modal
+      await dispatch(fetchSemesters());
+
+      // Don't close modal until request completes successfully
       onClose();
     } catch (error) {
       setErrors({
@@ -148,27 +170,58 @@ export const EditSemesterModal: React.FC<EditSemesterModalProps> = ({
           </div>
         )}
 
-        <div>
-          <label
-            htmlFor="edit-shortName"
-            className="block text-sm font-medium text-gray-700 mb-1"
-          >
-            Short Name *
-          </label>
-          <input
-            type="text"
-            id="edit-shortName"
-            value={formData.shortName}
-            onChange={(e) => handleInputChange('shortName', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-              errors.shortName ? 'border-red-300' : 'border-gray-300'
-            }`}
-            placeholder="e.g., Fall 2024, Spring 2025"
-            disabled={isSubmitting}
-          />
-          {errors.shortName && (
-            <p className="mt-1 text-sm text-red-600">{errors.shortName}</p>
-          )}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label
+              htmlFor="edit-season"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Season *
+            </label>
+            <select
+              id="edit-season"
+              value={formData.season}
+              onChange={(e) => handleInputChange('season', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                errors.season ? 'border-red-300' : 'border-gray-300'
+              }`}
+              disabled={isSubmitting}
+            >
+              <option value="">Select a season</option>
+              <option value="Fall">Fall</option>
+              <option value="Spring">Spring</option>
+              <option value="Summer">Summer</option>
+              <option value="Winter">Winter</option>
+            </select>
+            {errors.season && (
+              <p className="mt-1 text-sm text-red-600">{errors.season}</p>
+            )}
+          </div>
+
+          <div>
+            <label
+              htmlFor="edit-year"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Year *
+            </label>
+            <input
+              type="number"
+              id="edit-year"
+              value={formData.year}
+              onChange={(e) => handleInputChange('year', e.target.value)}
+              className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+                errors.year ? 'border-red-300' : 'border-gray-300'
+              }`}
+              placeholder="e.g., 2024"
+              min="2000"
+              max="2100"
+              disabled={isSubmitting}
+            />
+            {errors.year && (
+              <p className="mt-1 text-sm text-red-600">{errors.year}</p>
+            )}
+          </div>
         </div>
 
         <div>

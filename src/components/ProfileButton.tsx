@@ -94,9 +94,6 @@ export function ProfileButton() {
                   {getDisplayName()}
                 </p>
                 <p className="text-xs text-gray-500">{user.email}</p>
-                <p className="text-xs text-blue-600 font-medium">
-                  {user.role}
-                </p>
               </div>
             </div>
           </div>

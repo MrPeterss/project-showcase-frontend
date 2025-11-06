@@ -1,5 +1,6 @@
 import type { RootState } from '../index'
 import type { Semester } from '@/services'
+import { formatSemesterShortName } from '@/lib/semesterUtils'
 
 // Basic selectors
 export const selectAllSemesters = (state: RootState) => state.semesters.semesters
@@ -22,7 +23,7 @@ export const selectSemestersCount = (state: RootState) => state.semesters.semest
 export const selectSemesterOptions = (state: RootState) => {
   return state.semesters.semesters.map(semester => ({
     value: semester.id.toString(),
-    label: semester.shortName,
+    label: formatSemesterShortName(semester),
     semester
   }))
 }

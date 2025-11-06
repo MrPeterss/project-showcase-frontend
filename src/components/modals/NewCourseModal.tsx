@@ -1,42 +1,39 @@
 import React, { useState } from 'react';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { createCourse } from '@/store/thunks/coursesThunks';
-import { selectAllSemesters } from '@/store/selectors/semestersSelectors';
+import { useAppDispatch } from '@/store/hooks';
+import { createCourse, fetchCourses } from '@/store/thunks/coursesThunks';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 
 interface NewCourseModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess?: () => void; // Callback when course is successfully created
 }
 
 interface FormData {
   department: string;
   number: string;
   name: string;
-  semesterId: string;
 }
 
 interface FormErrors {
   department?: string;
   number?: string;
   name?: string;
-  semesterId?: string;
   general?: string;
 }
 
 export const NewCourseModal: React.FC<NewCourseModalProps> = ({
   isOpen,
   onClose,
+  onSuccess,
 }) => {
   const dispatch = useAppDispatch();
-  const semesters = useAppSelector(selectAllSemesters);
 
   const [formData, setFormData] = useState<FormData>({
     department: '',
     number: '',
     name: '',
-    semesterId: '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -69,11 +66,6 @@ export const NewCourseModal: React.FC<NewCourseModalProps> = ({
       newErrors.name = 'Course name must be at least 3 characters';
     }
 
-    // Validate semester
-    if (!formData.semesterId) {
-      newErrors.semesterId = 'Semester is required';
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -102,17 +94,25 @@ export const NewCourseModal: React.FC<NewCourseModalProps> = ({
           department: formData.department.trim(),
           number: parseInt(formData.number.trim()),
           name: formData.name.trim(),
-          semesterId: parseInt(formData.semesterId),
         })
       ).unwrap();
+
+      // Refresh courses before closing modal
+      await dispatch(fetchCourses());
 
       // Reset form and close modal on success
       setFormData({
         department: '',
         number: '',
         name: '',
-        semesterId: '',
       });
+      
+      // Call success callback if provided (e.g., to refresh course offering modal)
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      // Don't close modal until request completes successfully
       onClose();
     } catch (error) {
       setErrors({
@@ -130,7 +130,6 @@ export const NewCourseModal: React.FC<NewCourseModalProps> = ({
         department: '',
         number: '',
         name: '',
-        semesterId: '',
       });
       setErrors({});
       onClose();
@@ -143,6 +142,7 @@ export const NewCourseModal: React.FC<NewCourseModalProps> = ({
       onClose={handleClose}
       title="Create New Course"
       size="md"
+      zIndex={60}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {errors.general && (
@@ -221,34 +221,6 @@ export const NewCourseModal: React.FC<NewCourseModalProps> = ({
           />
           {errors.name && (
             <p className="mt-1 text-sm text-red-600">{errors.name}</p>
-          )}
-        </div>
-
-        <div>
-          <label
-            htmlFor="semesterId"
-            className="block text-sm font-medium text-gray-700 mb-1"
-          >
-            Semester *
-          </label>
-          <select
-            id="semesterId"
-            value={formData.semesterId}
-            onChange={(e) => handleInputChange('semesterId', e.target.value)}
-            className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-              errors.semesterId ? 'border-red-300' : 'border-gray-300'
-            }`}
-            disabled={isSubmitting}
-          >
-            <option value="">Select a semester</option>
-            {semesters.map((semester) => (
-              <option key={semester.id} value={semester.id.toString()}>
-                {semester.shortName}
-              </option>
-            ))}
-          </select>
-          {errors.semesterId && (
-            <p className="mt-1 text-sm text-red-600">{errors.semesterId}</p>
           )}
         </div>
 

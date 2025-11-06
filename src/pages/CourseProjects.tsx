@@ -1,72 +1,151 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { selectAllCourses, selectCoursesLoading } from '@/store/selectors/coursesSelectors';
-import { fetchCourses } from '@/store/thunks/coursesThunks';
+import { useAuth } from '@/hooks/useAuth';
 import { CourseNavBar } from '@/components/CourseNavBar';
-import { ArrowLeft } from 'lucide-react';
-import { useEffect } from 'react';
+import { ArrowLeft, Plus, ExternalLink, Pencil } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { services } from '@/services';
+import { NewTeamModal, EditTeamModal } from '@/components/modals';
+import type { CourseOffering, Team } from '@/services/types';
 
 export default function CourseProjects() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
-  const dispatch = useAppDispatch();
-  
-  // Allow all roles to access this page
-  const { hasAccess, userRole, isLoading } = useRoleAccess([
+
+  const [offering, setOffering] = useState<CourseOffering | null>(null);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isNewTeamModalOpen, setIsNewTeamModalOpen] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null);
+  const [isEditTeamModalOpen, setIsEditTeamModalOpen] = useState(false);
+
+  // Allow all roles to access this page (including VIEWER)
+  const { hasAccess: isAuthenticated } = useRoleAccess([
     'ADMIN',
     'INSTRUCTOR',
     'STUDENT',
+    'VIEWER',
   ]);
+  const { user } = useAuth();
 
-  // Get course data
-  const courses = useAppSelector(selectAllCourses);
-  const coursesLoading = useAppSelector(selectCoursesLoading);
-  const course = courses?.find(c => c.id.toString() === courseId);
+  // Function to fetch all data
+  const fetchData = async () => {
+    if (!courseId) return;
 
-  // Load courses if not already loaded
-  useEffect(() => {
-    if (!courses || courses.length === 0) {
-      dispatch(fetchCourses());
+    try {
+      setLoading(true);
+      setError(null);
+
+      const offeringId = parseInt(courseId, 10);
+      if (isNaN(offeringId)) {
+        setError('Invalid course offering ID');
+        return;
+      }
+
+      // Fetch course offering (includes course and semester info)
+      const offeringResponse = await services.courseOfferings.getById(
+        offeringId
+      );
+      const offeringData = offeringResponse.data;
+      setOffering(offeringData);
+
+      // Fetch teams for this offering
+      try {
+        const teamsResponse = await services.teams.getByCourseOffering(
+          offeringId
+        );
+        setTeams(teamsResponse.data);
+      } catch (teamsError) {
+        console.error('Error fetching teams:', teamsError);
+        // Teams might not be available, set empty array
+        setTeams([]);
+      }
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to load course offering';
+      setError(errorMessage);
+      console.error('Error fetching course offering:', err);
+    } finally {
+      setLoading(false);
     }
-  }, [dispatch, courses]);
+  };
+
+  // Fetch course offering data
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchData();
+    }
+  }, [courseId, isAuthenticated]);
 
   // If user doesn't have access, the hook will handle redirection
-  if (!hasAccess) {
+  if (!isAuthenticated) {
     return null;
   }
 
-  // Get course name for navigation (use fallback during loading)
-  const courseName = course 
-    ? `${course.department} ${course.number} - ${course.name}`
+  // Get course name for navigation
+  const courseName = offering?.course
+    ? `${offering.course.department} ${offering.course.number} - ${offering.course.name}`
     : `Course ${courseId}`;
+
+  // Get site URL from environment variable or use window location
+  const siteUrl = import.meta.env.VITE_SITE_URL || window.location.hostname;
+
+  // Generate project URL for a team
+  const getProjectUrl = (teamName: string) => {
+    // Format: teamname.{site_URL}
+    // Remove any spaces and convert to lowercase for URL
+    const sanitizedTeamName = teamName.toLowerCase().replace(/\s+/g, '');
+    return `https://${sanitizedTeamName}.${siteUrl}`;
+  };
 
   return (
     <div>
-      {/* Course Navigation - Always show, even during loading */}
-      <CourseNavBar 
-        courseId={courseId!} 
+      {/* Course Navigation */}
+      <CourseNavBar
+        courseId={courseId!}
         courseName={courseName}
+        courseUserRole={offering?.userRole}
+        semester={offering?.semester}
       />
-      
+
       <div className="container mx-auto p-6">
-        {/* Show loading state while checking authentication and role or loading courses */}
-        {isLoading || coursesLoading ? (
+        {/* Loading state */}
+        {loading ? (
           <Card>
             <CardContent className="p-6">
               <div className="text-center">Loading...</div>
             </CardContent>
           </Card>
-        ) : !course ? (
-          /* Course not found */
+        ) : error ? (
+          /* Error state */
           <Card>
             <CardContent className="p-6">
               <div className="text-center">
-                <h2 className="text-2xl font-bold mb-4">Course Not Found</h2>
+                <h2 className="text-2xl font-bold mb-4">
+                  Error Loading Course
+                </h2>
+                <p className="text-muted-foreground mb-4">{error}</p>
+                <Button onClick={() => navigate('/courses')}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Courses
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : !offering ? (
+          /* Course offering not found */
+          <Card>
+            <CardContent className="p-6">
+              <div className="text-center">
+                <h2 className="text-2xl font-bold mb-4">
+                  Course Offering Not Found
+                </h2>
                 <p className="text-muted-foreground mb-4">
-                  The course you're looking for doesn't exist.
+                  The course offering you're looking for doesn't exist.
                 </p>
                 <Button onClick={() => navigate('/courses')}>
                   <ArrowLeft className="h-4 w-4 mr-2" />
@@ -76,44 +155,171 @@ export default function CourseProjects() {
             </CardContent>
           </Card>
         ) : (
-          /* Course content */
-          <div className="grid gap-6">
+          /* Course offering content */
+          <>
+            {/* Teams Table */}
             <Card>
               <CardHeader>
-                <CardTitle>Course Projects</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Teams ({teams.length})</CardTitle>
+                  {(offering?.userRole === 'INSTRUCTOR' ||
+                    user?.role === 'ADMIN') && (
+                    <Button
+                      size="sm"
+                      onClick={() => setIsNewTeamModalOpen(true)}
+                      className="bg-red-700 hover:bg-red-800 text-white"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Team
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
-                <p className="text-muted-foreground">
-                  This is where course-specific projects would be displayed.
-                  The content will vary based on user role.
-                </p>
-                
-                {userRole === 'STUDENT' && (
-                  <div className="mt-4">
-                    <p className="text-sm text-blue-600">
-                      Students can view and work on their assigned projects here.
+                {teams.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground mb-4">
+                      No teams have been created yet.
                     </p>
+                    {(offering?.userRole === 'INSTRUCTOR' ||
+                      user?.role === 'ADMIN') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsNewTeamModalOpen(true)}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create First Team
+                      </Button>
+                    )}
                   </div>
-                )}
-                
-                {userRole === 'INSTRUCTOR' && (
-                  <div className="mt-4">
-                    <p className="text-sm text-green-600">
-                      Instructors can manage projects, assign them to students, and track progress.
-                    </p>
-                  </div>
-                )}
-                
-                {userRole === 'ADMIN' && (
-                  <div className="mt-4">
-                    <p className="text-sm text-purple-600">
-                      Admins have full control over all projects in this course.
-                    </p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left p-3 font-semibold">
+                            Team Name
+                          </th>
+                          <th className="text-left p-3 font-semibold">
+                            Members
+                          </th>
+                          <th className="text-left p-3 font-semibold">
+                            Project Link
+                          </th>
+                          {(offering?.userRole === 'INSTRUCTOR' ||
+                            user?.role === 'ADMIN') && (
+                            <th className="text-right p-3 font-semibold">
+                              Actions
+                            </th>
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teams.map((team) => (
+                          <tr
+                            key={team.id}
+                            className="border-b hover:bg-gray-50"
+                          >
+                            <td className="text-left p-3 font-medium">
+                              {team.name}
+                            </td>
+                            <td className="text-left p-3">
+                              <Badge variant="outline">
+                                {team.members?.length || 0}
+                              </Badge>
+                            </td>
+                            <td className="text-left p-3">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const projectUrl = getProjectUrl(team.name);
+                                  window.open(
+                                    projectUrl,
+                                    '_blank',
+                                    'noopener,noreferrer'
+                                  );
+                                }}
+                                className="flex items-center gap-2"
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                                Open Project
+                              </Button>
+                            </td>
+                            {(offering?.userRole === 'INSTRUCTOR' ||
+                              user?.role === 'ADMIN') && (
+                              <td className="text-right p-3">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingTeam(team);
+                                    setIsEditTeamModalOpen(true);
+                                  }}
+                                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </CardContent>
             </Card>
-          </div>
+
+            {/* New Team Modal */}
+            {offering && (
+              <>
+                <NewTeamModal
+                  isOpen={isNewTeamModalOpen}
+                  onClose={() => setIsNewTeamModalOpen(false)}
+                  courseOfferingId={offering.id}
+                  onSuccess={() => {
+                    // Refresh teams after successful creation
+                    const offeringId = parseInt(courseId!, 10);
+                    if (!isNaN(offeringId)) {
+                      services.teams
+                        .getByCourseOffering(offeringId)
+                        .then((response) => {
+                          setTeams(response.data);
+                        })
+                        .catch((error) => {
+                          console.error('Error refreshing teams:', error);
+                        });
+                    }
+                  }}
+                />
+                <EditTeamModal
+                  isOpen={isEditTeamModalOpen}
+                  onClose={() => {
+                    setIsEditTeamModalOpen(false);
+                    setEditingTeam(null);
+                  }}
+                  courseOfferingId={offering.id}
+                  team={editingTeam}
+                  onSuccess={() => {
+                    // Refresh teams after successful update
+                    const offeringId = parseInt(courseId!, 10);
+                    if (!isNaN(offeringId)) {
+                      services.teams
+                        .getByCourseOffering(offeringId)
+                        .then((response) => {
+                          setTeams(response.data);
+                        })
+                        .catch((error) => {
+                          console.error('Error refreshing teams:', error);
+                        });
+                    }
+                  }}
+                />
+              </>
+            )}
+          </>
         )}
       </div>
     </div>

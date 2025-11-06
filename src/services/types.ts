@@ -1,5 +1,5 @@
 // Role type
-export type Role = "ADMIN" | "INSTRUCTOR" | "STUDENT";
+export type Role = "ADMIN" | "INSTRUCTOR" | "STUDENT" | "VIEWER";
 
 // User entity
 export type User = {
@@ -9,41 +9,78 @@ export type User = {
   teamId?: number
   createdAt: string
   role: Role
-  refreshToken?: string
   team?: Team
 }
 
 // Semester entity
 export type Semester = {
   id: number
-  shortName: string
+  season: string
+  year: number
   startDate: string
   endDate: string
   courses?: Course[]
 }
 
-// Course entity
+// Course entity (template - no semester)
 export type Course = {
   id: number
   department: string
   number: number
   name: string
+  createdAt: string
+}
+
+// Course Offering entity (course + semester instance)
+export type CourseOffering = {
+  id: number
+  courseId: number
   semesterId: number
+  settings?: CourseOfferingSettings
+  createdAt: string
+  course?: Course
   semester?: Semester
-  projectTypes?: ProjectType[]
+  enrollments?: Enrollment[]
   teams?: Team[]
+  userRole?: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
+}
+
+// Course Offering Settings
+export type CourseOfferingSettings = {
+  viewableOfferings?: number[]
+  allowTeamCreation?: boolean
+  maxTeamSize?: number
+  projectDeadline?: string
+  allowLateSubmissions?: boolean
+  canView?: number[]
+  allowDeployment?: boolean
+}
+
+// Enrollment entity
+export type Enrollment = {
+  role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
+  userId: number
+  courseOfferingId: number
+  user?: User
 }
 
 // Team entity
 export type Team = {
   id: number
   name: string
-  port: number
-  courseId: number
+  port?: number
+  courseOfferingId: number
   createdAt: string
-  course?: Course
-  users?: User[]
+  courseOffering?: CourseOffering
+  members?: TeamMember[]
   projects?: Project[]
+}
+
+// Team Member entity
+export type TeamMember = {
+  userId: number
+  teamId: number
+  user?: User
 }
 
 // ProjectType entity
@@ -51,8 +88,8 @@ export type ProjectType = {
   id: number
   name: string
   content: string // Base64 encoded content or JSON string
-  courseId: number
-  course?: Course
+  courseOfferingId: number
+  courseOffering?: CourseOffering
 }
 
 // Project entity
@@ -69,19 +106,30 @@ export type Project = {
   deployedBy?: User
 }
 
-// Course creation/update DTOs
+// Course creation/update DTOs (template only)
 export type CreateCourseData = {
   department: string
   number: number
   name: string
-  semesterId: number
 }
 
 export type UpdateCourseData = Partial<CreateCourseData>
 
+// Course Offering creation/update DTOs
+export type CreateCourseOfferingData = {
+  courseId: number
+  semesterId: number
+  settings?: CourseOfferingSettings
+}
+
+export type UpdateCourseOfferingData = {
+  settings?: CourseOfferingSettings
+}
+
 // Semester creation/update DTOs
 export type CreateSemesterData = {
-  shortName: string
+  season: string
+  year: number
   startDate: string
   endDate: string
 }
@@ -100,11 +148,26 @@ export type UpdateProjectTypeData = Partial<CreateProjectTypeData>
 // Team creation/update DTOs
 export type CreateTeamData = {
   name: string
-  port: number
-  courseId: number
+  memberEmails: string[]
+  courseOfferingId: number
 }
 
-export type UpdateTeamData = Partial<CreateTeamData>
+export type UpdateTeamData = {
+  name?: string
+  memberEmails?: string[]
+}
+
+// Enrollment creation/update DTOs
+export type CreateEnrollmentData = {
+  enrollments: Array<{
+    email: string
+    role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
+  }>
+}
+
+export type UpdateEnrollmentData = {
+  role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
+}
 
 // Project creation/update DTOs
 export type CreateProjectData = {

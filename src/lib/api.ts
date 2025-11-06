@@ -1,8 +1,15 @@
 import axios, { AxiosError, type AxiosRequestConfig, type AxiosResponse } from 'axios'
+import { tokenManager } from './tokenManager'
+import authServices from '@/services/auth'
 import { auth } from './firebase'
+import { dispatch } from '@/store'
+import { triggerUserRefresh } from '@/store/slices/userSlice'
 
 // Base API configuration
 export const API_BASE_URL = '/api'
+
+// Shared refresh token promise to prevent multiple simultaneous refresh attempts
+let refreshTokenPromise: Promise<string> | null = null
 
 // Create Axios instance
 export const apiClient = axios.create({
@@ -11,21 +18,37 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 })
 
 // Request interceptor to add auth token
 apiClient.interceptors.request.use(
   async (config) => {
     try {
-      const accessToken = localStorage.getItem('access_token')
+      const isRefreshTokenEndpoint = config.url?.includes('/auth/refresh-token')
       
-      if (accessToken) {
+      // If a refresh is in progress, wait for it to complete before making the request
+      // This ensures we use the freshest token and prevents duplicate refresh calls
+      // BUT: Skip waiting if this IS the refresh-token request itself (to prevent deadlock)
+      if (refreshTokenPromise && !isRefreshTokenEndpoint) {
+        try {
+          await refreshTokenPromise
+        } catch (error) {
+          // Refresh failed, continue with current token (will fail and redirect if needed)
+        }
+      }
+      
+      const accessToken = tokenManager.getToken()
+      
+      if (accessToken && !isRefreshTokenEndpoint) {
         config.headers.Authorization = `Bearer ${accessToken}`
       }
+      
+      return config
     } catch (error) {
       console.error('Error getting auth token:', error)
+      return config
     }
-    return config
   },
   (error) => {
     return Promise.reject(error)
@@ -38,49 +61,81 @@ apiClient.interceptors.response.use(
     return response
   },
   async (error: AxiosError) => {
-    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean }
+    const originalRequest = error.config as AxiosRequestConfig & { 
+      _retry?: boolean
+      _skipRefresh?: boolean
+    }
 
-    // Handle 401 errors (unauthorized)
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isRefreshTokenEndpoint = originalRequest.url?.includes('/auth/refresh-token')
+    
+    if (
+      error.response?.status === 401 && 
+      !originalRequest._retry && 
+      !originalRequest._skipRefresh &&
+      !isRefreshTokenEndpoint
+    ) {
       originalRequest._retry = true
 
-      try {
-        const currentUser = auth.currentUser
-        if (currentUser) {
-          // Force refresh the Firebase token
-          const newFirebaseToken = await currentUser.getIdToken(true)
-          // Save refreshed Firebase token to localStorage
-          localStorage.setItem('firebase_token', newFirebaseToken)
+      // If a refresh is already in progress, wait for it instead of starting a new one
+      if (!refreshTokenPromise) {
+        refreshTokenPromise = (async () => {
+          try {
+            const refreshResponse = await authServices.refreshToken()
+            const newAccessToken = refreshResponse.data.accessToken
+            
+            if (!newAccessToken) {
+              throw new Error('No access token in refresh response')
+            }
+            
+            // Store the new access token in memory
+            tokenManager.setToken(newAccessToken)
+            
+            // Dispatch Redux action to trigger user refresh in useAuth hook
+            dispatch(triggerUserRefresh())
+            
+            return newAccessToken
+          } catch (refreshError) {
+            // Token refresh failed, clear token and redirect to login
+            console.error('Token refresh failed:', refreshError)
+            tokenManager.clearToken()
 
-          // Verify the token with the backend to get a new access token
-          const verifyResponse = await axios.post(`${API_BASE_URL}/auth/verify-token`, { firebaseToken: newFirebaseToken })
-          const newAccessToken = verifyResponse.data.data.accessToken
-          
-          // Save the new access token
-          localStorage.setItem('access_token', newAccessToken)
+            // Sign out from Firebase
+            try {
+              await auth.signOut()
+            } catch (signOutError) {
+              console.error('Error signing out:', signOutError)
+            }
 
-          // Update the request headers with the new access token
-          if (originalRequest.headers) {
-            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+            // Only redirect if we're not already on the login page
+            const isLoginPage = window.location.pathname === '/login'
+            if (!isLoginPage) {
+              window.location.href = '/login'
+            }
+            
+            // Clear the promise so subsequent requests can attempt refresh again
+            refreshTokenPromise = null
+            throw refreshError
+          } finally {
+            setTimeout(() => {
+              refreshTokenPromise = null
+            }, 1000) // Increased to 1 second to catch all concurrent requests
           }
-          
-          return apiClient(originalRequest)
+        })()
+      }
+
+      try {
+        // Wait for the refresh to complete (either this request started it or another one did)
+        const newAccessToken = await refreshTokenPromise
+
+        // Update the request headers with the new access token
+        if (originalRequest.headers) {
+          originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
         }
+        
+        return apiClient(originalRequest)
       } catch (refreshError) {
-        // Token refresh failed, log user out
-        console.error('Token refresh failed:', refreshError)
-        localStorage.removeItem('firebase_token')
-        localStorage.removeItem('access_token')
-
-        // Sign out from Firebase
-        try {
-          await auth.signOut()
-        } catch (signOutError) {
-          console.error('Error signing out:', signOutError)
-        }
-
-        // Redirect to login or refresh page
-        window.location.href = '/login' // or handle this in your app routing
+        // Refresh failed, reject the original request
+        return Promise.reject(refreshError)
       }
     }
 

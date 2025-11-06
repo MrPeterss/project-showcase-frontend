@@ -4,6 +4,7 @@ import type { User as FirebaseUser } from 'firebase/auth'
 import { auth, googleProvider } from '@/lib/firebase'
 import { services } from '@/services'
 import { api } from '@/lib/api'
+import { tokenManager } from '@/lib/tokenManager'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import {
   setUser,
@@ -26,8 +27,12 @@ export const useAuth = () => {
       }
       
       // Verify token with backend to get access token
+      // The backend will set the refresh token cookie automatically
       const response = await services.auth.verifyToken(firebaseToken)
-      localStorage.setItem('access_token', response.data.accessToken)
+      const accessToken = response.data.accessToken
+      
+      // Store access token in memory
+      tokenManager.setToken(accessToken)
       
       // Get user information from /users/me endpoint
       const userResponse = await api.get('/users/me')
@@ -57,7 +62,8 @@ export const useAuth = () => {
         }
       } else {
         localStorage.removeItem('firebase_token')
-        localStorage.removeItem('access_token')
+        // Clear access token from memory
+        tokenManager.clearToken()
         dispatch(clearUser())
       }
 
@@ -66,6 +72,25 @@ export const useAuth = () => {
 
     return unsubscribe
   }, [dispatch, syncUser])
+
+  // Also sync user when token is refreshed (e.g., from API interceptor)
+  useEffect(() => {
+    const handleTokenRefresh = async () => {
+      const accessToken = tokenManager.getToken()
+      if (accessToken && firebaseUser) {
+        try {
+          // Get user information from /users/me endpoint
+          const userResponse = await api.get('/users/me')
+          dispatch(setUser(userResponse.data))
+        } catch (error) {
+          console.error('Error syncing user from refreshed token:', error)
+        }
+      }
+    }
+
+    // Watch for tokenRefreshTrigger changes (dispatched by API interceptor)
+    handleTokenRefresh()
+  }, [firebaseUser, userState.tokenRefreshTrigger, dispatch])
 
   const signInWithGoogle = async () => {
     dispatch(setError(null))
@@ -82,7 +107,8 @@ export const useAuth = () => {
     dispatch(setError(null))
     try {
       localStorage.removeItem('firebase_token')
-      localStorage.removeItem('access_token')
+      // Clear access token from memory
+      tokenManager.clearToken()
       await signOut(auth)
       setFirebaseUser(null)
       dispatch(clearUser())

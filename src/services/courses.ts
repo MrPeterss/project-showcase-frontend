@@ -2,27 +2,23 @@ import { api, type ApiResponse } from '@/lib/api'
 import type { Course, CreateCourseData, UpdateCourseData } from './types'
 
 export const courseServices = {
-  // Get all courses
+  // Get all courses (Admin only - returns course templates)
   getAll: (): Promise<ApiResponse<Course[]>> =>
     api.get('/courses'),
 
-  // Get course by ID
+  // Get course by ID (Admin only)
   getById: (id: number): Promise<ApiResponse<Course>> =>
     api.get(`/courses/${id}`),
 
-  // Get courses by semester
-  getBySemester: (semesterId: number): Promise<ApiResponse<Course[]>> =>
-    api.get(`/courses?semesterId=${semesterId}`),
-
-  // Create new course
+  // Create new course template (Admin only)
   create: (data: CreateCourseData): Promise<ApiResponse<Course>> =>
     api.post('/courses', data),
 
-  // Update course
+  // Update course template (Admin only)
   update: (id: number, data: UpdateCourseData): Promise<ApiResponse<Course>> =>
     api.put(`/courses/${id}`, data),
 
-  // Delete course
+  // Delete course template (Admin only)
   delete: (id: number): Promise<ApiResponse<void>> =>
     api.delete(`/courses/${id}`),
 }

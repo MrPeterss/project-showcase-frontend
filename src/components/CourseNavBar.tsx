@@ -2,42 +2,61 @@ import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import { formatSemesterShortName } from '@/lib/semesterUtils';
+import type { Semester } from '@/services/types';
 
 interface CourseNavBarProps {
   courseId: string;
   courseName: string;
+  courseUserRole?: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER';
+  semester?: Semester;
 }
 
-export function CourseNavBar({ courseId, courseName }: CourseNavBarProps) {
+export function CourseNavBar({ courseId, courseName, courseUserRole, semester }: CourseNavBarProps) {
   const location = useLocation();
   const { user } = useAuth();
 
   const isActive = (path: string) => location.pathname === path;
 
-  // Determine which tabs to show based on user role
+  // Determine which tabs to show based on course-specific user role
+  // Fall back to global user role if courseUserRole is not provided
   const getNavigationTabs = () => {
-    if (!user?.role) return [];
+    // Use course-specific role if available, otherwise fall back to global role
+    const role = courseUserRole || user?.role;
+    
+    if (!role) return [];
 
     const tabs = [
-      { path: `/courses/${courseId}`, label: 'Details' }
+      { path: `/courses/${courseId}`, label: 'Projects' }
     ];
 
-    if (user.role === 'STUDENT') {
+    // Admins (global role) always see Settings tab
+    if (user?.role === 'ADMIN') {
       tabs.push(
-        { path: `/courses/${courseId}/projects`, label: 'Projects' },
-        { path: `/courses/${courseId}/dashboard`, label: 'Dashboard' }
-      );
-    } else if (user.role === 'ADMIN' || user.role === 'INSTRUCTOR') {
-      tabs.push(
-        { path: `/courses/${courseId}/projects`, label: 'Projects' },
         { path: `/courses/${courseId}/settings`, label: 'Settings' }
       );
     }
+    // Instructors see Settings tab
+    else if (role === 'INSTRUCTOR') {
+      tabs.push(
+        { path: `/courses/${courseId}/settings`, label: 'Settings' }
+      );
+    }
+    // Students see Dashboard tab
+    else if (role === 'STUDENT') {
+      tabs.push(
+        { path: `/courses/${courseId}/dashboard`, label: 'Dashboard' }
+      );
+    }
+    // VIEWER role only sees Projects tab (no additional tabs)
 
     return tabs;
   };
 
   const navigationTabs = getNavigationTabs();
+  
+  // Use course-specific role for display, fall back to global role
+  const displayRole = courseUserRole || user?.role || 'STUDENT';
 
   if (navigationTabs.length === 0) {
     return null;
@@ -49,8 +68,18 @@ export function CourseNavBar({ courseId, courseName }: CourseNavBarProps) {
         <div className="py-4">
           {/* Course Header */}
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">{courseName}</h2>
-            <Badge variant="secondary">{user?.role || 'STUDENT'}</Badge>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold text-gray-900">{courseName}</h2>
+              {semester && (
+                <Badge
+                  variant="outline"
+                  className="text-sm font-medium px-3 py-1"
+                >
+                  {formatSemesterShortName(semester)}
+                </Badge>
+              )}
+            </div>
+            <Badge variant="secondary">{displayRole}</Badge>
           </div>
           
           {/* Navigation Tabs */}

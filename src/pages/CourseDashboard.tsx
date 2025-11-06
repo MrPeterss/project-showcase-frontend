@@ -3,28 +3,37 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { selectAllCourses, selectCoursesLoading } from '@/store/selectors/coursesSelectors';
+import {
+  selectAllCourses,
+  selectCoursesLoading,
+} from '@/store/selectors/coursesSelectors';
 import { fetchCourses } from '@/store/thunks/coursesThunks';
 import { CourseNavBar } from '@/components/CourseNavBar';
 import { ArrowLeft } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { services } from '@/services';
+import type { CourseOffering } from '@/services/types';
 
 export default function CourseDashboard() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
-  
-  // Allow all roles to access this page
-  const { hasAccess, userRole, isLoading } = useRoleAccess([
+
+  const [offering, setOffering] = useState<CourseOffering | null>(null);
+  const [offeringLoading, setOfferingLoading] = useState(true);
+
+  // Allow all authenticated users initially, then check course-specific role
+  const { hasAccess: isAuthenticated, isLoading } = useRoleAccess([
     'ADMIN',
     'INSTRUCTOR',
     'STUDENT',
+    'VIEWER',
   ]);
 
   // Get course data
   const courses = useAppSelector(selectAllCourses);
   const coursesLoading = useAppSelector(selectCoursesLoading);
-  const course = courses?.find(c => c.id.toString() === courseId);
+  const course = courses?.find((c) => c.id.toString() === courseId);
 
   // Load courses if not already loaded
   useEffect(() => {
@@ -33,27 +42,74 @@ export default function CourseDashboard() {
     }
   }, [dispatch, courses]);
 
+  // Fetch course offering to get userRole
+  useEffect(() => {
+    const fetchOffering = async () => {
+      if (!courseId || !isAuthenticated) return;
+
+      try {
+        setOfferingLoading(true);
+        const offeringId = parseInt(courseId, 10);
+        if (isNaN(offeringId)) {
+          return;
+        }
+
+        const offeringResponse = await services.courseOfferings.getById(
+          offeringId
+        );
+        setOffering(offeringResponse.data);
+      } catch (err) {
+        console.error('Error fetching course offering:', err);
+        // If 401/403, user doesn't have access - redirect to courses
+        if (
+          (err as any)?.response?.status === 401 ||
+          (err as any)?.response?.status === 403
+        ) {
+          navigate('/courses');
+        }
+      } finally {
+        setOfferingLoading(false);
+      }
+    };
+
+    if (isAuthenticated) {
+      fetchOffering();
+    }
+  }, [courseId, isAuthenticated, navigate]);
+
+  // Check course-specific role access after fetching offering
+  useEffect(() => {
+    if (offering?.userRole && offering.userRole !== 'STUDENT') {
+      // Redirect to projects page if not a student
+      navigate(`/courses/${courseId}`, { replace: true });
+    }
+  }, [offering?.userRole, courseId, navigate]);
+
   // If user doesn't have access, the hook will handle redirection
-  if (!hasAccess) {
+  if (!isAuthenticated) {
     return null;
   }
 
   // Get course name for navigation (use fallback during loading)
-  const courseName = course 
+  const courseName = offering?.course
+    ? `${offering.course.department} ${offering.course.number} - ${offering.course.name}`
+    : course
     ? `${course.department} ${course.number} - ${course.name}`
     : `Course ${courseId}`;
 
   return (
     <div>
       {/* Course Navigation - Always show, even during loading */}
-      <CourseNavBar 
-        courseId={courseId!} 
+      <CourseNavBar
+        courseId={courseId!}
         courseName={courseName}
+        courseUserRole={offering?.userRole}
+        semester={offering?.semester}
       />
-      
+
       <div className="container mx-auto p-6">
         {/* Show loading state while checking authentication and role or loading courses */}
-        {isLoading || coursesLoading ? (
+        {isLoading || coursesLoading || offeringLoading ? (
           <Card>
             <CardContent className="p-6">
               <div className="text-center">Loading...</div>
@@ -84,33 +140,16 @@ export default function CourseDashboard() {
               </CardHeader>
               <CardContent>
                 <p className="text-muted-foreground">
-                  This is where course-specific dashboard information would be displayed.
-                  The content will vary based on user role.
+                  This is where course-specific dashboard information would be
+                  displayed. The content will vary based on user role.
                 </p>
-                
-                {userRole === 'STUDENT' && (
-                  <div className="mt-4">
-                    <p className="text-sm text-blue-600">
-                      Students can view their progress, grades, and course overview here.
-                    </p>
-                  </div>
-                )}
-                
-                {userRole === 'INSTRUCTOR' && (
-                  <div className="mt-4">
-                    <p className="text-sm text-green-600">
-                      Instructors can view course analytics, student progress, and manage course content.
-                    </p>
-                  </div>
-                )}
-                
-                {userRole === 'ADMIN' && (
-                  <div className="mt-4">
-                    <p className="text-sm text-purple-600">
-                      Admins can view comprehensive course analytics and manage all aspects.
-                    </p>
-                  </div>
-                )}
+
+                <div className="mt-4">
+                  <p className="text-sm text-blue-600">
+                    Students can view their progress, grades, and course
+                    overview here.
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </div>
