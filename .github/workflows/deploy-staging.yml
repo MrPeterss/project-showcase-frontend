@@ -31,4 +31,4 @@ jobs:
         
       - name: Reload nginx
         run: |
-          sudo systemctl reload nginx
+          systemctl reload nginx
