@@ -58,7 +58,7 @@ export function CourseLayout() {
         err instanceof Error ? err.message : 'Failed to load course offering';
       setError(errorMessage);
       console.error('Error fetching course offering:', err);
-      
+
       // If 401/403, user doesn't have access
       if (
         (err as any)?.response?.status === 401 ||
@@ -88,7 +88,12 @@ export function CourseLayout() {
       return `${offering.course.department} ${offering.course.number} - ${offering.course.name}`;
     }
     return `Course ${courseId}`;
-  }, [offering?.course?.department, offering?.course?.number, offering?.course?.name, courseId]);
+  }, [
+    offering?.course?.department,
+    offering?.course?.number,
+    offering?.course?.name,
+    courseId,
+  ]);
 
   const contextValue: CourseContextType = {
     offering,
@@ -109,7 +114,7 @@ export function CourseLayout() {
             semester={offering?.semester}
           />
         )}
-        
+
         {/* Render child routes */}
         <Outlet />
       </div>

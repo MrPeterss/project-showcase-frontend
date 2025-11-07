@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from 'react'
+import { useEffect, useCallback, useState, useRef } from 'react'
 import { onIdTokenChanged, signInWithPopup, signOut } from 'firebase/auth'
 import type { User as FirebaseUser } from 'firebase/auth'
 import { auth, googleProvider } from '@/lib/firebase'
@@ -18,14 +18,19 @@ export const useAuth = () => {
   const userState = useAppSelector((state) => state.user)
 
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null)
+  // Track the last processed Firebase token to avoid duplicate API calls
+  const lastProcessedTokenRef = useRef<string | null>(null)
+  // Track if initial load has completed
+  const isInitialLoadRef = useRef(true)
 
-  const syncUser = useCallback(async () => {
+  // Use ref to store the latest user state to avoid recreating the callback
+  const userRef = useRef(userState.user)
+  useEffect(() => {
+    userRef.current = userState.user
+  }, [userState.user])
+
+  const syncUser = useCallback(async (firebaseToken: string) => {
     try {
-      const firebaseToken = localStorage.getItem('firebase_token')
-      if (!firebaseToken) {
-        throw new Error('No Firebase token available')
-      }
-      
       // Verify token with backend to get access token
       // The backend will set the refresh token cookie automatically
       const response = await services.auth.verifyToken(firebaseToken)
@@ -37,6 +42,9 @@ export const useAuth = () => {
       // Get user information from /users/me endpoint
       const userResponse = await api.get('/users/me')
       dispatch(setUser(userResponse.data))
+      
+      // Update the last processed token
+      lastProcessedTokenRef.current = firebaseToken
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to verify token'
       dispatch(setError(errorMessage))
@@ -45,32 +53,66 @@ export const useAuth = () => {
   }, [dispatch])
 
   useEffect(() => {
+    let isMounted = true
     const unsubscribe = onIdTokenChanged(auth, async (user) => {
-      setFirebaseUser(user)
-      dispatch(setLoading(true))
+      // Only set loading state on initial load
+      const isInitialLoad = isInitialLoadRef.current
+      if (isInitialLoad) {
+        dispatch(setLoading(true))
+        isInitialLoadRef.current = false
+      }
       dispatch(setError(null))
 
       if (user) {
         try {
           const idToken = await user.getIdToken()
           localStorage.setItem('firebase_token', idToken)
-
-          await syncUser()
+          
+          // Update Firebase user reference (needed for other components)
+          if (isMounted) {
+            setFirebaseUser(user)
+          }
+          
+          // Check if we already have valid auth state (access token + user data)
+          const hasValidAuth = tokenManager.hasToken() && userRef.current
+          
+          // Only sync/verify if:
+          // 1. This is the initial load (first time checking auth state), OR
+          // 2. We don't have valid auth state (missing access token or user data)
+          // Note: We don't need to verify on every Firebase token refresh if we already have a valid access token
+          if (isInitialLoad || !hasValidAuth) {
+            await syncUser(idToken)
+          } else {
+            // We have valid auth, just update the ref to track that we've seen this token
+            lastProcessedTokenRef.current = idToken
+          }
         } catch (error) {
           console.error('Error syncing user:', error)
-          dispatch(setError('Failed to sync user profile'))
+          if (isMounted) {
+            dispatch(setError('Failed to sync user profile'))
+          }
         }
       } else {
-        localStorage.removeItem('firebase_token')
-        // Clear access token from memory
-        tokenManager.clearToken()
-        dispatch(clearUser())
+        // User signed out
+        if (isMounted) {
+          setFirebaseUser(null)
+          localStorage.removeItem('firebase_token')
+          // Clear access token from memory
+          tokenManager.clearToken()
+          lastProcessedTokenRef.current = null
+          dispatch(clearUser())
+        }
       }
 
-      dispatch(setLoading(false))
+      if (isMounted) {
+        dispatch(setLoading(false))
+      }
     })
 
-    return unsubscribe
+    return () => {
+      isMounted = false
+      unsubscribe()
+    }
   }, [dispatch, syncUser])
 
   // Also sync user when token is refreshed (e.g., from API interceptor)
