@@ -1,0 +1,34 @@
+name: Deploy Staging Frontend
+
+on:
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted-staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'yarn'
+          
+      - name: Install dependencies
+        run: yarn install
+        
+      - name: Build project directly to target directory
+      
+        run: |
+          set -a
+          source ${{ secrets.ENV_FILE_PATH }}
+          set +a
+          yarn build --outDir ${{ secrets.DISTRIBUTION_PATH }} --emptyOutDir
+        
+      - name: Reload nginx
+        run: |
+          sudo systemctl reload nginx
