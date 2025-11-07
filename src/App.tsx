@@ -14,6 +14,7 @@ import { queryClient } from './lib/queryClient';
 import { QueryErrorBoundary } from './components/ErrorBoundary';
 import { NavBar } from './components/NavBar';
 import { GlobalHeader } from './components/GlobalHeader';
+import { CourseLayout } from './components/CourseLayout';
 import Courses from './pages/Courses';
 import CourseProjects from './pages/CourseProjects';
 import CourseDashboard from './pages/CourseDashboard';
@@ -39,15 +40,11 @@ function AppContent() {
       <main className="mx-auto max-w-6xl">
         <Routes>
           <Route path="/courses" element={<Courses />} />
-          <Route path="/courses/:courseId" element={<CourseProjects />} />
-          <Route
-            path="/courses/:courseId/dashboard"
-            element={<CourseDashboard />}
-          />
-          <Route
-            path="/courses/:courseId/settings"
-            element={<CourseSettings />}
-          />
+          <Route path="/courses/:courseId" element={<CourseLayout />}>
+            <Route index element={<CourseProjects />} />
+            <Route path="dashboard" element={<CourseDashboard />} />
+            <Route path="settings" element={<CourseSettings />} />
+          </Route>
           <Route path="/login" element={<LoginCard />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>

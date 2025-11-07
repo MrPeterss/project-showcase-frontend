@@ -1,3 +1,4 @@
+import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -12,7 +13,7 @@ interface CourseNavBarProps {
   semester?: Semester;
 }
 
-export function CourseNavBar({ courseId, courseName, courseUserRole, semester }: CourseNavBarProps) {
+function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester }: CourseNavBarProps) {
   const location = useLocation();
   const { user } = useAuth();
 
@@ -107,3 +108,5 @@ export function CourseNavBar({ courseId, courseName, courseUserRole, semester }:
     </div>
   );
 }
+
+export const CourseNavBar = React.memo(CourseNavBarComponent);
