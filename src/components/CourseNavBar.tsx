@@ -36,7 +36,7 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
       tabs.push(
         { path: `/courses/${courseId}/settings`, label: 'Settings' }
       );
-    }
+    } 
     // Instructors see Settings tab
     else if (role === 'INSTRUCTOR') {
       tabs.push(
@@ -70,7 +70,7 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
           {/* Course Header */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <h2 className="text-xl font-semibold text-gray-900">{courseName}</h2>
+            <h2 className="text-xl font-semibold text-gray-900">{courseName}</h2>
               {semester && (
                 <Badge
                   variant="outline"

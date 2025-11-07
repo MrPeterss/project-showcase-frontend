@@ -1,5 +1,12 @@
 import { useParams, Outlet } from 'react-router-dom';
-import { useEffect, useState, createContext, useContext, useMemo } from 'react';
+import {
+  useEffect,
+  useState,
+  createContext,
+  useContext,
+  useMemo,
+  useCallback,
+} from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { CourseNavBar } from '@/components/CourseNavBar';
 import { services } from '@/services';
@@ -36,7 +43,22 @@ export function CourseLayout() {
     'VIEWER',
   ]);
 
-  const fetchOffering = async () => {
+  // IMPORTANT: All hooks must be called before any conditional returns
+  // Get course name for navigation (memoized to prevent unnecessary rerenders)
+  const courseName = useMemo(() => {
+    if (offering?.course) {
+      return `${offering.course.department} ${offering.course.number} - ${offering.course.name}`;
+    }
+    return `Course ${courseId}`;
+  }, [
+    offering?.course?.department,
+    offering?.course?.number,
+    offering?.course?.name,
+    courseId,
+  ]);
+
+  // Memoize fetchOffering to prevent unnecessary re-renders
+  const fetchOffering = useCallback(async () => {
     if (!courseId) return;
 
     try {
@@ -69,31 +91,19 @@ export function CourseLayout() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [courseId]);
 
   useEffect(() => {
     if (isAuthenticated) {
       fetchOffering();
     }
-  }, [courseId, isAuthenticated]);
+  }, [isAuthenticated, fetchOffering]);
 
   // If user doesn't have access, the hook will handle redirection
+  // This early return must come AFTER all hooks are called
   if (!isAuthenticated) {
     return null;
   }
-
-  // Get course name for navigation (memoized to prevent unnecessary rerenders)
-  const courseName = useMemo(() => {
-    if (offering?.course) {
-      return `${offering.course.department} ${offering.course.number} - ${offering.course.name}`;
-    }
-    return `Course ${courseId}`;
-  }, [
-    offering?.course?.department,
-    offering?.course?.number,
-    offering?.course?.name,
-    courseId,
-  ]);
 
   const contextValue: CourseContextType = {
     offering,

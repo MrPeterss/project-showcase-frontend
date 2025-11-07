@@ -13,11 +13,14 @@ import { formatSemesterShortName } from '@/lib/semesterUtils';
 export default function CourseSettings() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
+
+  // IMPORTANT: Call all hooks at the top, before any conditional logic
   const {
     offering,
     loading: offeringLoading,
     refetch: refetchOffering,
   } = useCourseContext();
+  const { user } = useAuth();
 
   // State for settings
   const [lockProjectServer, setLockProjectServer] = useState(false);
@@ -34,8 +37,6 @@ export default function CourseSettings() {
     number[]
   >([]);
   const [savingVisibility, setSavingVisibility] = useState(false);
-
-  const { user } = useAuth();
 
   // Fetch enrollments and available offerings when offering is loaded
   useEffect(() => {

@@ -18,19 +18,15 @@ export const useAuth = () => {
   const userState = useAppSelector((state) => state.user)
 
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null)
-  // Track the last processed Firebase token to avoid duplicate API calls
-  const lastProcessedTokenRef = useRef<string | null>(null)
-  // Track if initial load has completed
-  const isInitialLoadRef = useRef(true)
+  const lastSyncedTokenRef = useRef<string | null>(null)
 
-  // Use ref to store the latest user state to avoid recreating the callback
-  const userRef = useRef(userState.user)
-  useEffect(() => {
-    userRef.current = userState.user
-  }, [userState.user])
-
-  const syncUser = useCallback(async (firebaseToken: string) => {
+  const syncUser = useCallback(async () => {
     try {
+      const firebaseToken = localStorage.getItem('firebase_token')
+      if (!firebaseToken) {
+        throw new Error('No Firebase token available')
+      }
+      
       // Verify token with backend to get access token
       // The backend will set the refresh token cookie automatically
       const response = await services.auth.verifyToken(firebaseToken)
@@ -42,9 +38,6 @@ export const useAuth = () => {
       // Get user information from /users/me endpoint
       const userResponse = await api.get('/users/me')
       dispatch(setUser(userResponse.data))
-      
-      // Update the last processed token
-      lastProcessedTokenRef.current = firebaseToken
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to verify token'
       dispatch(setError(errorMessage))
@@ -54,58 +47,68 @@ export const useAuth = () => {
 
   useEffect(() => {
     let isMounted = true
+    let hasInitialized = false
+
     const unsubscribe = onIdTokenChanged(auth, async (user) => {
-      // Only set loading state on initial load
-      const isInitialLoad = isInitialLoadRef.current
-      if (isInitialLoad) {
+      if (!isMounted) return
+
+      setFirebaseUser(user)
+      
+      // Only set loading on first initialization (not on subsequent token changes)
+      if (!hasInitialized) {
         dispatch(setLoading(true))
-        isInitialLoadRef.current = false
+        hasInitialized = true
       }
       dispatch(setError(null))
 
       if (user) {
         try {
           const idToken = await user.getIdToken()
-          localStorage.setItem('firebase_token', idToken)
+          const storedToken = localStorage.getItem('firebase_token')
           
-          // Update Firebase user reference (needed for other components)
-          if (isMounted) {
-            setFirebaseUser(user)
-          }
+          // Check if token actually changed (not just on initial load)
+          const tokenChanged = storedToken !== null && storedToken !== idToken
           
-          // Check if we already have valid auth state (access token + user data)
-          const hasValidAuth = tokenManager.hasToken() && userRef.current
+          // Check current state - if we have user and token, and token hasn't changed, skip sync
+          const hasUser = userState.user !== null
+          const hasToken = tokenManager.getToken() !== null
+          const alreadySyncedThisToken = lastSyncedTokenRef.current === idToken
           
-          // Only sync/verify if:
-          // 1. This is the initial load (first time checking auth state), OR
-          // 2. We don't have valid auth state (missing access token or user data)
-          // Note: We don't need to verify on every Firebase token refresh if we already have a valid access token
-          if (isInitialLoad || !hasValidAuth) {
-            await syncUser(idToken)
+          // Only sync if:
+          // 1. Token changed (refresh), OR
+          // 2. We don't have a user in state yet (initial load or page reload), OR
+          // 3. We don't have an access token in memory (page reload - token lost)
+          // AND we haven't already synced with this exact token
+          const needsSync = (tokenChanged || !hasUser || !hasToken) && !alreadySyncedThisToken
+          
+          if (needsSync) {
+            localStorage.setItem('firebase_token', idToken)
+            lastSyncedTokenRef.current = idToken
+            await syncUser()
           } else {
-            // We have valid auth, just update the ref to track that we've seen this token
-            lastProcessedTokenRef.current = idToken
+            // Token is the same, user is loaded, and we have a token
+            // Just update the stored token in case it was updated by Firebase
+            localStorage.setItem('firebase_token', idToken)
+            if (isMounted && hasInitialized && hasUser) {
+              dispatch(setLoading(false))
+            }
           }
         } catch (error) {
           console.error('Error syncing user:', error)
           if (isMounted) {
             dispatch(setError('Failed to sync user profile'))
+            dispatch(setLoading(false))
           }
         }
       } else {
-        // User signed out
+        localStorage.removeItem('firebase_token')
+        lastSyncedTokenRef.current = null
+        // Clear access token from memory
+        tokenManager.clearToken()
+        dispatch(clearUser())
         if (isMounted) {
-          setFirebaseUser(null)
-          localStorage.removeItem('firebase_token')
-          // Clear access token from memory
-          tokenManager.clearToken()
-          lastProcessedTokenRef.current = null
-          dispatch(clearUser())
+          dispatch(setLoading(false))
         }
-      }
-
-      if (isMounted) {
-        dispatch(setLoading(false))
       }
     })
 
@@ -113,13 +116,14 @@ export const useAuth = () => {
       isMounted = false
       unsubscribe()
     }
-  }, [dispatch, syncUser])
+  }, [dispatch, syncUser, userState.user])
 
   // Also sync user when token is refreshed (e.g., from API interceptor)
   useEffect(() => {
     const handleTokenRefresh = async () => {
       const accessToken = tokenManager.getToken()
-      if (accessToken && firebaseUser) {
+      // Only fetch user if we have a token but no user, or if token was refreshed
+      if (accessToken && firebaseUser && (!userState.user || userState.tokenRefreshTrigger > 0)) {
         try {
           // Get user information from /users/me endpoint
           const userResponse = await api.get('/users/me')
@@ -131,8 +135,11 @@ export const useAuth = () => {
     }
 
     // Watch for tokenRefreshTrigger changes (dispatched by API interceptor)
-    handleTokenRefresh()
-  }, [firebaseUser, userState.tokenRefreshTrigger, dispatch])
+    // Only run if tokenRefreshTrigger actually changed (not on initial mount)
+    if (userState.tokenRefreshTrigger > 0) {
+      handleTokenRefresh()
+    }
+  }, [firebaseUser, userState.tokenRefreshTrigger, userState.user, dispatch])
 
   const signInWithGoogle = async () => {
     dispatch(setError(null))
