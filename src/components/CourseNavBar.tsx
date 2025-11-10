@@ -164,38 +164,41 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
                   </button>
                 ) : (
                   // Multiple teams: tab with hover dropdown
-                  <DropdownMenu open={isDashboardHovered} onOpenChange={setIsDashboardHovered}>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        onMouseEnter={() => setIsDashboardHovered(true)}
-                        onMouseLeave={() => setIsDashboardHovered(false)}
-                        className={cn(
-                          'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
-                          'text-muted-foreground'
-                        )}
-                      >
-                        Dashboard
-                        <ExternalLink className="h-3 w-3" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      onMouseEnter={() => setIsDashboardHovered(true)}
-                      onMouseLeave={() => setIsDashboardHovered(false)}
-                      align="start"
-                      className="min-w-[200px]"
-                    >
-                      {userTeams.map((team) => (
-                        <DropdownMenuItem
-                          key={team.id}
-                          onClick={() => handleDashboardClick(team.id)}
-                          className="flex items-center gap-2 cursor-pointer"
+                  <div
+                    onMouseEnter={() => setIsDashboardHovered(true)}
+                    onMouseLeave={() => setIsDashboardHovered(false)}
+                    className="relative"
+                  >
+                    <DropdownMenu open={isDashboardHovered} onOpenChange={setIsDashboardHovered}>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          className={cn(
+                            'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
+                            'text-muted-foreground'
+                          )}
                         >
+                          Dashboard
                           <ExternalLink className="h-3 w-3" />
-                          {team.name}
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent
+                        align="start"
+                        sideOffset={2}
+                        className="min-w-[200px]"
+                      >
+                        {userTeams.map((team) => (
+                          <DropdownMenuItem
+                            key={team.id}
+                            onClick={() => handleDashboardClick(team.id)}
+                            className="flex items-center gap-2 cursor-pointer"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            {team.name}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 )}
               </>
             )}
