@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { ExternalLink } from 'lucide-react';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
 import { services } from '@/services';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { Semester, Team } from '@/services/types';
 
 interface CourseNavBarProps {
@@ -18,12 +23,16 @@ interface CourseNavBarProps {
 
 function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester }: CourseNavBarProps) {
   const location = useLocation();
-  const navigate = useNavigate();
   const { user } = useAuth();
   const [userTeams, setUserTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
+  const [isDashboardHovered, setIsDashboardHovered] = useState(false);
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleDashboardClick = (teamId: number) => {
+    window.open(`/dashboard/${teamId}`, '_blank', 'noopener,noreferrer');
+  };
 
   // Fetch teams for the course offering and filter by current user
   useEffect(() => {
@@ -138,28 +147,56 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
               </Link>
             ))}
             
-            {/* Team Tabs */}
+            {/* Dashboard Tab for Teams */}
             {!teamsLoading && userTeams.length > 0 && (
               <>
-                {userTeams.map((team) => (
-                  <div
-                    key={team.id}
-                    className="relative px-1 py-2 text-sm font-medium flex items-center gap-2"
+                {userTeams.length === 1 ? (
+                  // Single team: simple clickable tab
+                  <button
+                    onClick={() => handleDashboardClick(userTeams[0].id)}
+                    className={cn(
+                      'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
+                      'text-muted-foreground'
+                    )}
                   >
-                    <span className="text-muted-foreground">{team.name}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0"
-                      onClick={() => {
-                        navigate(`/dashboard/${team.id}`);
-                      }}
-                      title={`Go to ${team.name} dashboard`}
+                    Dashboard
+                    <ExternalLink className="h-3 w-3" />
+                  </button>
+                ) : (
+                  // Multiple teams: tab with hover dropdown
+                  <DropdownMenu open={isDashboardHovered} onOpenChange={setIsDashboardHovered}>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        onMouseEnter={() => setIsDashboardHovered(true)}
+                        onMouseLeave={() => setIsDashboardHovered(false)}
+                        className={cn(
+                          'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
+                          'text-muted-foreground'
+                        )}
+                      >
+                        Dashboard
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      onMouseEnter={() => setIsDashboardHovered(true)}
+                      onMouseLeave={() => setIsDashboardHovered(false)}
+                      align="start"
+                      className="min-w-[200px]"
                     >
-                      <ExternalLink className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
+                      {userTeams.map((team) => (
+                        <DropdownMenuItem
+                          key={team.id}
+                          onClick={() => handleDashboardClick(team.id)}
+                          className="flex items-center gap-2 cursor-pointer"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {team.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </>
             )}
           </nav>
