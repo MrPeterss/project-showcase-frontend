@@ -1,10 +1,13 @@
-import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ExternalLink } from 'lucide-react';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
-import type { Semester } from '@/services/types';
+import { services } from '@/services';
+import type { Semester, Team } from '@/services/types';
 
 interface CourseNavBarProps {
   courseId: string;
@@ -15,9 +18,41 @@ interface CourseNavBarProps {
 
 function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester }: CourseNavBarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
+  const [userTeams, setUserTeams] = useState<Team[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(true);
 
   const isActive = (path: string) => location.pathname === path;
+
+  // Fetch teams for the course offering and filter by current user
+  useEffect(() => {
+    if (!courseId || !user) {
+      setTeamsLoading(false);
+      return;
+    }
+
+    const fetchUserTeams = async () => {
+      try {
+        setTeamsLoading(true);
+        const offeringId = parseInt(courseId, 10);
+        if (isNaN(offeringId)) {
+          setTeamsLoading(false);
+          return;
+        }
+
+        const teamsResponse = await services.teams.getMyTeams(offeringId);
+        setUserTeams(teamsResponse.data);
+      } catch (error) {
+        console.error('Error fetching user teams:', error);
+        setUserTeams([]);
+      } finally {
+        setTeamsLoading(false);
+      }
+    };
+
+    fetchUserTeams();
+  }, [courseId, user]);
 
   // Determine which tabs to show based on course-specific user role
   // Fall back to global user role if courseUserRole is not provided
@@ -84,7 +119,7 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
           </div>
           
           {/* Navigation Tabs */}
-          <nav className="flex space-x-8">
+          <nav className="flex space-x-8 items-center">
             {navigationTabs.map((tab) => (
               <Link
                 key={tab.path}
@@ -102,6 +137,31 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
                 )}
               </Link>
             ))}
+            
+            {/* Team Tabs */}
+            {!teamsLoading && userTeams.length > 0 && (
+              <>
+                {userTeams.map((team) => (
+                  <div
+                    key={team.id}
+                    className="relative px-1 py-2 text-sm font-medium flex items-center gap-2"
+                  >
+                    <span className="text-muted-foreground">{team.name}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0"
+                      onClick={() => {
+                        navigate(`/dashboard/${team.id}`);
+                      }}
+                      title={`Go to ${team.name} dashboard`}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </>
+            )}
           </nav>
         </div>
       </div>

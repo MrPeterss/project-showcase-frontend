@@ -6,6 +6,10 @@ export const teamServices = {
   getByCourseOffering: (offeringId: number): Promise<ApiResponse<Team[]>> =>
     api.get(`/course-offerings/${offeringId}/teams`),
 
+  // Get current user's teams for a course offering
+  getMyTeams: (offeringId: number): Promise<ApiResponse<Team[]>> =>
+    api.get(`/course-offerings/${offeringId}/teams/me`),
+
   // Create team for a course offering
   create: (offeringId: number, data: CreateTeamData): Promise<ApiResponse<Team>> =>
     api.post(`/course-offerings/${offeringId}/teams`, data),

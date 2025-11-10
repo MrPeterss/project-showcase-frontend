@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 interface NewCourseModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void; // Callback when course is successfully created
+  onSuccess?: () => void;
 }
 
 interface FormData {

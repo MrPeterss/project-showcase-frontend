@@ -10,7 +10,7 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   showCloseButton?: boolean;
   closeOnOverlayClick?: boolean;
-  zIndex?: number; // Add z-index prop for nested modals
+  zIndex?: number;
 }
 
 export const Modal: React.FC<ModalProps> = ({

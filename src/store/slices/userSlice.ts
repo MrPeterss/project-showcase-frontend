@@ -5,7 +5,7 @@ export interface UserState {
   user: User | null
   isLoading: boolean
   error: string | null
-  tokenRefreshTrigger: number // Increment this to trigger user refresh
+  tokenRefreshTrigger: number
 }
 
 const initialState: UserState = {
