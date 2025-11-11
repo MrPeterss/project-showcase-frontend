@@ -19,6 +19,7 @@ export default function CourseSettings() {
     offering,
     loading: offeringLoading,
     refetch: refetchOffering,
+    effectiveRole,
   } = useCourseContext();
   const { user } = useAuth();
 
@@ -37,6 +38,8 @@ export default function CourseSettings() {
     number[]
   >([]);
   const [savingVisibility, setSavingVisibility] = useState(false);
+
+  const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
 
   // Fetch enrollments and available offerings when offering is loaded
   useEffect(() => {
@@ -87,15 +90,11 @@ export default function CourseSettings() {
 
   // Check course-specific role access after fetching offering
   useEffect(() => {
-    if (
-      offering?.userRole &&
-      offering.userRole !== 'INSTRUCTOR' &&
-      user?.role !== 'ADMIN'
-    ) {
+    if (effectiveRole && effectiveRole !== 'INSTRUCTOR' && effectiveRole !== 'ADMIN') {
       // Redirect to projects page if not an instructor or admin
       navigate(`/courses/${courseId}`, { replace: true });
     }
-  }, [offering?.userRole, user?.role, courseId, navigate]);
+  }, [effectiveRole, courseId, navigate]);
 
   // Handler functions
   const parseStudentInput = (input: string) => {
@@ -277,8 +276,7 @@ export default function CourseSettings() {
   };
 
   // Check if user has access based on course-specific role or global admin role
-  const hasCourseAccess =
-    offering?.userRole === 'INSTRUCTOR' || user?.role === 'ADMIN';
+  const hasCourseAccess = canManage;
 
   // Show loading while checking access
   if (offering && !hasCourseAccess) {

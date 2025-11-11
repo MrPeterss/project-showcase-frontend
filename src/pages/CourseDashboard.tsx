@@ -8,15 +8,15 @@ import { useEffect } from 'react';
 export default function CourseDashboard() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
-  const { offering, loading: offeringLoading } = useCourseContext();
+  const { offering, loading: offeringLoading, effectiveRole } = useCourseContext();
 
   // Check course-specific role access after fetching offering
   useEffect(() => {
-    if (offering?.userRole && offering.userRole !== 'STUDENT') {
+    if (effectiveRole && effectiveRole !== 'STUDENT') {
       // Redirect to projects page if not a student
       navigate(`/courses/${courseId}`, { replace: true });
     }
-  }, [offering?.userRole, courseId, navigate]);
+  }, [effectiveRole, courseId, navigate]);
 
   return (
     <div className="container mx-auto p-6">

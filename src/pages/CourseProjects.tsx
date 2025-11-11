@@ -2,7 +2,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/hooks/useAuth';
 import { useCourseContext } from '@/components/CourseLayout';
 import { ArrowLeft, Plus, ExternalLink, Pencil } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -17,6 +16,7 @@ export default function CourseProjects() {
     offering,
     loading: offeringLoading,
     error: offeringError,
+    effectiveRole,
   } = useCourseContext();
 
   const [teams, setTeams] = useState<Team[]>([]);
@@ -25,7 +25,7 @@ export default function CourseProjects() {
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [isEditTeamModalOpen, setIsEditTeamModalOpen] = useState(false);
 
-  const { user } = useAuth();
+  const canManage = effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN';
 
   // Fetch teams for this offering
   useEffect(() => {
@@ -117,8 +117,7 @@ export default function CourseProjects() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Teams ({teams.length})</CardTitle>
-                {(offering?.userRole === 'INSTRUCTOR' ||
-                  user?.role === 'ADMIN') && (
+                {canManage && (
                   <Button
                     size="sm"
                     onClick={() => setIsNewTeamModalOpen(true)}
@@ -136,8 +135,7 @@ export default function CourseProjects() {
                   <p className="text-muted-foreground mb-4">
                     No teams have been created yet.
                   </p>
-                  {(offering?.userRole === 'INSTRUCTOR' ||
-                    user?.role === 'ADMIN') && (
+                  {canManage && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -160,8 +158,7 @@ export default function CourseProjects() {
                         <th className="text-left p-3 font-semibold">
                           Project Link
                         </th>
-                        {(offering?.userRole === 'INSTRUCTOR' ||
-                          user?.role === 'ADMIN') && (
+                        {canManage && (
                           <th className="text-right p-3 font-semibold">
                             Actions
                           </th>
@@ -197,8 +194,7 @@ export default function CourseProjects() {
                               Open Project
                             </Button>
                           </td>
-                          {(offering?.userRole === 'INSTRUCTOR' ||
-                            user?.role === 'ADMIN') && (
+                          {canManage && (
                             <td className="text-right p-3">
                               <Button
                                 variant="ghost"

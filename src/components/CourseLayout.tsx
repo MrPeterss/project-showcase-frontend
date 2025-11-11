@@ -1,4 +1,4 @@
-import { useParams, Outlet } from 'react-router-dom';
+import { useParams, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   useEffect,
   useState,
@@ -9,14 +9,19 @@ import {
 } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { CourseNavBar } from '@/components/CourseNavBar';
+import { useAuth } from '@/hooks/useAuth';
 import { services } from '@/services';
-import type { CourseOffering } from '@/services/types';
+import type { CourseOffering, Role } from '@/services/types';
 
 interface CourseContextType {
   offering: CourseOffering | null;
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  effectiveRole?: Role;
+  viewAsStudent: boolean;
+  toggleViewAsStudent: () => void;
+  setViewAsStudent: (value: boolean) => void;
 }
 
 const CourseContext = createContext<CourseContextType | null>(null);
@@ -31,9 +36,13 @@ export const useCourseContext = () => {
 
 export function CourseLayout() {
   const { courseId } = useParams<{ courseId: string }>();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [offering, setOffering] = useState<CourseOffering | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [viewAsStudent, setViewAsStudent] = useState(false);
 
   // Allow all roles to access course pages
   const { hasAccess: isAuthenticated } = useRoleAccess([
@@ -56,6 +65,15 @@ export function CourseLayout() {
     offering?.course?.name,
     courseId,
   ]);
+
+  const isAdmin = user?.role === 'ADMIN';
+
+  const effectiveRole = useMemo<Role | undefined>(() => {
+    if (isAdmin) {
+      return viewAsStudent ? 'STUDENT' : 'ADMIN';
+    }
+    return offering?.userRole ?? (user?.role as Role | undefined);
+  }, [isAdmin, viewAsStudent, offering?.userRole, user?.role]);
 
   // Memoize fetchOffering to prevent unnecessary re-renders
   const fetchOffering = useCallback(async () => {
@@ -94,10 +112,62 @@ export function CourseLayout() {
   }, [courseId]);
 
   useEffect(() => {
+    if (!isAdmin && viewAsStudent) {
+      setViewAsStudent(false);
+    }
+  }, [isAdmin, viewAsStudent]);
+
+  useEffect(() => {
+    setViewAsStudent(false);
+  }, [courseId]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      return () => {
+        setViewAsStudent(false);
+      };
+    }
+    return undefined;
+  }, [isAdmin]);
+
+  useEffect(() => {
     if (isAuthenticated) {
       fetchOffering();
     }
   }, [isAuthenticated, fetchOffering]);
+
+  useEffect(() => {
+    if (!courseId) return;
+    if (loading) return;
+
+    const basePath = `/courses/${courseId}`;
+    const normalizedPath = location.pathname.replace(/\/$/, '');
+
+    const allowedPaths = new Set<string>([basePath]);
+
+    if (effectiveRole === 'STUDENT') {
+      allowedPaths.add(`${basePath}/dashboard`);
+    }
+
+    if (effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN') {
+      allowedPaths.add(`${basePath}/settings`);
+    }
+
+    const normalizedAllowed = Array.from(allowedPaths).map((path) =>
+      path.replace(/\/$/, '')
+    );
+
+    const isAllowed = normalizedAllowed.some((path) => path === normalizedPath);
+
+    if (!isAllowed) {
+      navigate(basePath, { replace: true });
+    }
+  }, [courseId, effectiveRole, location.pathname, navigate, loading]);
+
+  const toggleViewAsStudent = () => {
+    if (!isAdmin) return;
+    setViewAsStudent((prev) => !prev);
+  };
 
   // If user doesn't have access, the hook will handle redirection
   // This early return must come AFTER all hooks are called
@@ -110,6 +180,10 @@ export function CourseLayout() {
     loading,
     error,
     refetch: fetchOffering,
+    effectiveRole,
+    viewAsStudent,
+    toggleViewAsStudent,
+    setViewAsStudent,
   };
 
   return (
@@ -120,7 +194,7 @@ export function CourseLayout() {
           <CourseNavBar
             courseId={courseId!}
             courseName={courseName}
-            courseUserRole={offering?.userRole}
+            courseUserRole={viewAsStudent && isAdmin ? 'STUDENT' : offering?.userRole}
             semester={offering?.semester}
           />
         )}

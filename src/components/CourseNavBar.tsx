@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
+import { useCourseContext } from '@/components/CourseLayout';
 import { Badge } from '@/components/ui/badge';
-import { ExternalLink } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ExternalLink, GraduationCap, Shield } from 'lucide-react';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
 import { services } from '@/services';
 import {
@@ -24,6 +26,7 @@ interface CourseNavBarProps {
 function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester }: CourseNavBarProps) {
   const location = useLocation();
   const { user } = useAuth();
+  const { viewAsStudent, effectiveRole, toggleViewAsStudent } = useCourseContext();
   const [userTeams, setUserTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [isDashboardHovered, setIsDashboardHovered] = useState(false);
@@ -63,32 +66,36 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
     fetchUserTeams();
   }, [courseId, user]);
 
+  const isAdmin = user?.role === 'ADMIN';
+
   // Determine which tabs to show based on course-specific user role
   // Fall back to global user role if courseUserRole is not provided
   const getNavigationTabs = () => {
     // Use course-specific role if available, otherwise fall back to global role
-    const role = courseUserRole || user?.role;
+    const normalizedRole = viewAsStudent && isAdmin
+      ? 'STUDENT'
+      : courseUserRole || effectiveRole || user?.role;
     
-    if (!role) return [];
+    if (!normalizedRole) return [];
 
     const tabs = [
       { path: `/courses/${courseId}`, label: 'Projects' }
     ];
 
     // Admins (global role) always see Settings tab
-    if (user?.role === 'ADMIN') {
+    if (isAdmin && !viewAsStudent) {
       tabs.push(
         { path: `/courses/${courseId}/settings`, label: 'Settings' }
       );
     } 
     // Instructors see Settings tab
-    else if (role === 'INSTRUCTOR') {
+    else if (normalizedRole === 'INSTRUCTOR') {
       tabs.push(
         { path: `/courses/${courseId}/settings`, label: 'Settings' }
       );
     }
     // Students see Dashboard tab
-    else if (role === 'STUDENT') {
+    else if (normalizedRole === 'STUDENT') {
       tabs.push(
         { path: `/courses/${courseId}/dashboard`, label: 'Dashboard' }
       );
@@ -101,7 +108,12 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
   const navigationTabs = getNavigationTabs();
   
   // Use course-specific role for display, fall back to global role
-  const displayRole = courseUserRole || user?.role || 'STUDENT';
+  const displayRole = (() => {
+    if (isAdmin) {
+      return viewAsStudent ? 'STUDENT (PREVIEW)' : 'ADMIN';
+    }
+    return courseUserRole || effectiveRole || user?.role || 'STUDENT';
+  })();
 
   if (navigationTabs.length === 0) {
     return null;
@@ -114,7 +126,7 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
           {/* Course Header */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold text-gray-900">{courseName}</h2>
+              <h2 className="text-xl font-semibold text-gray-900">{courseName}</h2>
               {semester && (
                 <Badge
                   variant="outline"
@@ -124,7 +136,29 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
                 </Badge>
               )}
             </div>
-            <Badge variant="secondary">{displayRole}</Badge>
+            <div className="flex flex-col items-end gap-2">
+              <Badge variant="secondary">{displayRole}</Badge>
+              {isAdmin && (
+                <Button
+                  variant={viewAsStudent ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={toggleViewAsStudent}
+                  className={viewAsStudent ? 'bg-red-700 hover:bg-red-800 text-white' : ''}
+                >
+                  {viewAsStudent ? (
+                    <span className="flex items-center gap-2">
+                      <Shield className="h-4 w-4" />
+                      Switch to Admin View
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <GraduationCap className="h-4 w-4" />
+                      Switch to Student View
+                    </span>
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
           
           {/* Navigation Tabs */}
