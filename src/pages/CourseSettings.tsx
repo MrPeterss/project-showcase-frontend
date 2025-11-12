@@ -14,7 +14,6 @@ import {
   useDeleteEnrollment,
 } from '@/hooks/useEnrollments';
 import { useCourseOfferings } from '@/hooks/useCourseOfferings';
-import type { Enrollment, CourseOffering } from '@/services/types';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
 
 export default function CourseSettings() {

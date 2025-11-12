@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { services } from '@/services'
-import type { CreateTeamData, Team, UpdateTeamData } from '@/services/types'
+import type { CreateTeamData, UpdateTeamData } from '@/services/types'
 
 export const teamKeys = {
 	all: ['teams'] as const,
