@@ -35,7 +35,7 @@ function CourseNavBarComponent({
     useCourseContext();
   const [userTeams, setUserTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
-  const [isDashboardHovered, setIsDashboardHovered] = useState(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -181,43 +181,42 @@ function CourseNavBarComponent({
                     <ExternalLink className="h-3 w-3" />
                   </button>
                 ) : (
-                  // Multiple teams: tab with hover dropdown
-                  <div
-                    onMouseEnter={() => setIsDashboardHovered(true)}
-                    onMouseLeave={() => setIsDashboardHovered(false)}
-                    className="relative"
+                  // Multiple teams: tab with click dropdown
+                  <DropdownMenu
+                    open={isDashboardOpen}
+                    onOpenChange={setIsDashboardOpen}
                   >
-                    <DropdownMenu
-                      open={isDashboardHovered}
-                      onOpenChange={setIsDashboardHovered}
-                    >
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          className={cn(
-                            'px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
-                            'text-muted-foreground'
-                          )}
-                        >
-                          Dashboard
-                          <ExternalLink className="h-3 w-3" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="start"
-                        className="min-w-[200px]"
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        className={cn(
+                          'px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
+                          'text-muted-foreground'
+                        )}
                       >
-                        {userTeams.map((team) => (
-                          <DropdownMenuItem
-                            key={team.id}
-                            onClick={() => handleDashboardClick(team.id)}
-                            className="flex items-center gap-2 cursor-pointer"
-                          >
-                            {team.name}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
+                        Dashboard
+                        <ExternalLink className="h-3 w-3" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="start"
+                      className="min-w-[200px]"
+                      onCloseAutoFocus={(e) => e.preventDefault()}
+                    >
+                      {userTeams.map((team) => (
+                        <DropdownMenuItem
+                          key={team.id}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleDashboardClick(team.id);
+                            setIsDashboardOpen(false);
+                          }}
+                          className="flex items-center gap-2 cursor-pointer"
+                        >
+                          {team.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
               </>
             )}

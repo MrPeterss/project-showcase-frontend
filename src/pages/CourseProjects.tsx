@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useCourseContext } from '@/components/CourseLayout';
+import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft, Plus, ExternalLink, Pencil, LayoutDashboard } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTeamsByOffering } from '@/hooks/useTeams';
@@ -58,8 +59,9 @@ export default function CourseProjects() {
     selectTeamsError(state, offeringId)
   );
 
+  const { user } = useAuth();
   const canManage = effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN';
-  const isAdmin = effectiveRole === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN' && effectiveRole === 'ADMIN';
 
   useEffect(() => {
     if (!offeringId) return;
@@ -190,7 +192,7 @@ export default function CourseProjects() {
                         <th className="text-left p-3 font-semibold">
                           Last Updated
                         </th>
-                        <th className="text-left p-3 font-semibold">
+                        <th className={`p-3 font-semibold ${canManage ? 'text-left' : 'text-right'}`}>
                           Project Link
                         </th>
                         {isAdmin && (
@@ -227,23 +229,25 @@ export default function CourseProjects() {
                                 ? new Date(lastDeployed).toLocaleString()
                                 : 'Not deployed'}
                             </td>
-                            <td className="text-left p-3">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  const projectUrl = getProjectUrl(team.name);
-                                  window.open(
-                                    projectUrl,
-                                    '_blank',
-                                    'noopener,noreferrer'
-                                  );
-                                }}
-                                className="flex items-center gap-2"
-                              >
-                                <ExternalLink className="h-4 w-4" />
-                                Open Project
-                              </Button>
+                            <td className={`p-3 ${canManage ? 'text-left' : 'text-right'}`}>
+                              <div className={canManage ? '' : 'flex justify-end'}>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const projectUrl = getProjectUrl(team.name);
+                                    window.open(
+                                      projectUrl,
+                                      '_blank',
+                                      'noopener,noreferrer'
+                                    );
+                                  }}
+                                  className="flex items-center gap-2"
+                                >
+                                  <ExternalLink className="h-4 w-4" />
+                                  Open Project
+                                </Button>
+                              </div>
                             </td>
                             {isAdmin && (
                               <td className="text-left p-3">

@@ -71,6 +71,31 @@ export function CourseLayout() {
     return offering?.userRole ?? (user?.role as Role | undefined);
   }, [isAdmin, viewAsStudent, offering?.userRole, user?.role]);
 
+  // Immediate security check: Validate that effectiveRole matches user's actual role
+  // This prevents students from having admin privileges after admin sign-out
+  const hasRoleMismatch = useMemo(() => {
+    if (!user || !effectiveRole) return false;
+    
+    // If user is not an admin globally, they should never have ADMIN effectiveRole
+    if (user.role !== 'ADMIN' && effectiveRole === 'ADMIN') {
+      return true;
+    }
+    
+    // If user is a student globally, they should never have ADMIN effectiveRole
+    if (user.role === 'STUDENT' && effectiveRole === 'ADMIN') {
+      return true;
+    }
+    
+    return false;
+  }, [user, effectiveRole]);
+
+  // Force reload if there's a role mismatch to clear stale state
+  useEffect(() => {
+    if (hasRoleMismatch) {
+      window.location.reload();
+    }
+  }, [hasRoleMismatch]);
+
   // Reset viewAsStudent when course changes or user is not admin
   useEffect(() => {
     if (!isAdmin && viewAsStudent) {
@@ -142,6 +167,18 @@ export function CourseLayout() {
   // This early return must come AFTER all hooks are called
   if (!isAuthenticated) {
     return null;
+  }
+
+  // Security check: Don't render content if there's a role mismatch
+  // This prevents students from seeing admin content
+  if (hasRoleMismatch) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="text-lg text-gray-600">Verifying permissions...</div>
+        </div>
+      </div>
+    );
   }
 
   const contextValue: CourseContextType = {
