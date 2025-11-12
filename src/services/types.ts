@@ -53,6 +53,7 @@ export type CourseOfferingSettings = {
   projectDeadline?: string
   allowLateSubmissions?: boolean
   canView?: number[]
+  course_visibility?: number[]
   allowDeployment?: boolean
 }
 
