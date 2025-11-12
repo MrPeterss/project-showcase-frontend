@@ -1,15 +1,20 @@
-import { useParams, Outlet } from 'react-router-dom';
-import React, { useState, createContext, useContext, useMemo } from 'react';
+import { useParams, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState, createContext, useContext, useMemo } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { CourseNavBar } from '@/components/CourseNavBar';
+import { useAuth } from '@/hooks/useAuth';
 import { useCourseOffering } from '@/hooks/useCourseOfferings';
-import type { CourseOffering } from '@/services/types';
+import type { CourseOffering, Role } from '@/services/types';
 
 interface CourseContextType {
   offering: CourseOffering | null;
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  effectiveRole?: Role;
+  viewAsStudent: boolean;
+  toggleViewAsStudent: () => void;
+  setViewAsStudent: (value: boolean) => void;
 }
 
 const CourseContext = createContext<CourseContextType | null>(null);
@@ -24,9 +29,10 @@ export const useCourseContext = () => {
 
 export function CourseLayout() {
   const { courseId } = useParams<{ courseId: string }>();
-  const [offering, setOffering] = useState<CourseOffering | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [viewAsStudent, setViewAsStudent] = useState(false);
 
   // Allow all roles to access course pages
   const { hasAccess: isAuthenticated } = useRoleAccess([
@@ -37,6 +43,54 @@ export function CourseLayout() {
   ]);
 
   // IMPORTANT: All hooks must be called before any conditional returns
+  const offeringId = courseId ? parseInt(courseId, 10) : NaN;
+  const {
+    data: offeringData,
+    isLoading,
+    error: offeringError,
+    refetch,
+  } = useCourseOffering(Number.isNaN(offeringId) ? undefined : offeringId);
+
+  // Bridge to local state shape used by context consumers
+  const [offering, setOffering] = useState<CourseOffering | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(isLoading);
+    setOffering(offeringData ?? null);
+    setError((offeringError as any)?.message ?? null);
+  }, [isLoading, offeringData, offeringError]);
+
+  const isAdmin = user?.role === 'ADMIN';
+
+  const effectiveRole = useMemo<Role | undefined>(() => {
+    if (isAdmin) {
+      return viewAsStudent ? 'STUDENT' : 'ADMIN';
+    }
+    return offering?.userRole ?? (user?.role as Role | undefined);
+  }, [isAdmin, viewAsStudent, offering?.userRole, user?.role]);
+
+  // Reset viewAsStudent when course changes or user is not admin
+  useEffect(() => {
+    if (!isAdmin && viewAsStudent) {
+      setViewAsStudent(false);
+    }
+  }, [isAdmin, viewAsStudent]);
+
+  useEffect(() => {
+    setViewAsStudent(false);
+  }, [courseId]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      return () => {
+        setViewAsStudent(false);
+      };
+    }
+    return undefined;
+  }, [isAdmin]);
+
   // Get course name for navigation (memoized to prevent unnecessary rerenders)
   const courseName = useMemo(() => {
     if (offering?.course) {
@@ -50,20 +104,39 @@ export function CourseLayout() {
     courseId,
   ]);
 
-  const offeringId = courseId ? parseInt(courseId, 10) : NaN;
-  const {
-    data: offeringData,
-    isLoading,
-    error: offeringError,
-    refetch,
-  } = useCourseOffering(Number.isNaN(offeringId) ? undefined : offeringId);
+  useEffect(() => {
+    if (!courseId) return;
+    if (loading) return;
+    if (!effectiveRole) return;
 
-  // Bridge to local state shape used by context consumers
-  React.useEffect(() => {
-    setLoading(isLoading);
-    setOffering(offeringData ?? null);
-    setError((offeringError as any)?.message ?? null);
-  }, [isLoading, offeringData, offeringError]);
+    const basePath = `/courses/${courseId}`;
+    const normalizedPath = location.pathname.replace(/\/$/, '');
+
+    const allowedPaths = new Set<string>([basePath]);
+
+    if (effectiveRole === 'STUDENT') {
+      allowedPaths.add(`${basePath}/dashboard`);
+    }
+
+    if (effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN') {
+      allowedPaths.add(`${basePath}/settings`);
+    }
+
+    const normalizedAllowed = Array.from(allowedPaths).map((path) =>
+      path.replace(/\/$/, '')
+    );
+
+    const isAllowed = normalizedAllowed.some((path) => path === normalizedPath);
+
+    if (!isAllowed) {
+      navigate(basePath, { replace: true });
+    }
+  }, [courseId, effectiveRole, location.pathname, navigate, loading]);
+
+  const toggleViewAsStudent = () => {
+    if (!isAdmin) return;
+    setViewAsStudent((prev) => !prev);
+  };
 
   // If user doesn't have access, the hook will handle redirection
   // This early return must come AFTER all hooks are called
@@ -78,6 +151,10 @@ export function CourseLayout() {
     refetch: async () => {
       await refetch();
     },
+    effectiveRole,
+    viewAsStudent,
+    toggleViewAsStudent,
+    setViewAsStudent,
   };
 
   return (

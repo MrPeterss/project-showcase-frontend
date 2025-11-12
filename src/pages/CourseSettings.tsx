@@ -8,7 +8,11 @@ import { ArrowLeft, Upload, Users, Lock, Eye, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { services } from '@/services';
 import { useUpdateCourseOffering } from '@/hooks/useCourseOfferings';
-import { useEnrollmentsByOffering, useCreateEnrollments, useDeleteEnrollment } from '@/hooks/useEnrollments';
+import {
+  useEnrollmentsByOffering,
+  useCreateEnrollments,
+  useDeleteEnrollment,
+} from '@/hooks/useEnrollments';
 import { useCourseOfferings } from '@/hooks/useCourseOfferings';
 import type { Enrollment, CourseOffering } from '@/services/types';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
@@ -22,6 +26,7 @@ export default function CourseSettings() {
     offering,
     loading: offeringLoading,
     refetch: refetchOffering,
+    effectiveRole,
   } = useCourseContext();
   const { user } = useAuth();
 
@@ -46,6 +51,8 @@ export default function CourseSettings() {
     number[]
   >([]);
 
+  const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
+
   // Compute available offerings from React Query data
   const availableOfferings = allOfferings
     ? allOfferings.filter((off) => {
@@ -65,14 +72,20 @@ export default function CourseSettings() {
     // Parse course_visibility from settings
     // Settings might be a JSON object with course_visibility key
     let courseVisibility: number[] = [];
-    
+
     if (offering.settings) {
       // Check if settings has course_visibility directly
-      if ('course_visibility' in offering.settings && Array.isArray((offering.settings as any).course_visibility)) {
+      if (
+        'course_visibility' in offering.settings &&
+        Array.isArray((offering.settings as any).course_visibility)
+      ) {
         courseVisibility = (offering.settings as any).course_visibility;
       }
       // Fallback to canView for backwards compatibility
-      else if ('canView' in offering.settings && Array.isArray((offering.settings as any).canView)) {
+      else if (
+        'canView' in offering.settings &&
+        Array.isArray((offering.settings as any).canView)
+      ) {
         courseVisibility = (offering.settings as any).canView;
       }
     }
@@ -83,14 +96,14 @@ export default function CourseSettings() {
   // Check course-specific role access after fetching offering
   useEffect(() => {
     if (
-      offering?.userRole &&
-      offering.userRole !== 'INSTRUCTOR' &&
-      user?.role !== 'ADMIN'
+      effectiveRole &&
+      effectiveRole !== 'INSTRUCTOR' &&
+      effectiveRole !== 'ADMIN'
     ) {
       // Redirect to projects page if not an instructor or admin
       navigate(`/courses/${courseId}`, { replace: true });
     }
-  }, [offering?.userRole, user?.role, courseId, navigate]);
+  }, [effectiveRole, courseId, navigate]);
 
   // Handler functions
   const parseStudentInput = (input: string) => {
@@ -264,8 +277,7 @@ export default function CourseSettings() {
   };
 
   // Check if user has access based on course-specific role or global admin role
-  const hasCourseAccess =
-    offering?.userRole === 'INSTRUCTOR' || user?.role === 'ADMIN';
+  const hasCourseAccess = canManage;
 
   // Show loading while checking access
   if (offering && !hasCourseAccess) {
@@ -582,7 +594,9 @@ export default function CourseSettings() {
                   disabled={updateCourseOffering.isPending}
                   className="bg-red-700 hover:bg-red-800 text-white"
                 >
-                  {updateCourseOffering.isPending ? 'Saving...' : 'Save Changes'}
+                  {updateCourseOffering.isPending
+                    ? 'Saving...'
+                    : 'Save Changes'}
                 </Button>
               </div>
             </CardContent>

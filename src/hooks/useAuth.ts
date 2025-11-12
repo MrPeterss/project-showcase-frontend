@@ -172,6 +172,10 @@ export const useAuth = () => {
     }
   }
 
+  useEffect(() => {
+    console.log('useAuth user state:', userState.user)
+  }, [userState.user])
+
   return {
     // Redux state
     user: userState.user,
