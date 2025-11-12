@@ -14,9 +14,8 @@ import {
   selectIsDeletingCourseOffering,
 } from '@/store/selectors/courseOfferingsSelectors';
 import { selectAllSemesters } from '@/store/selectors/semestersSelectors';
-import { selectUser } from '@/store/selectors/userSelectors';
-import { useAuth } from '@/hooks/useAuth';
-import { useEffect, useState } from 'react';
+import { selectIsLoading, selectUser } from '@/store/selectors/userSelectors';
+import { useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import type { CourseOffering, Semester } from '@/services';
 import { CoursesHeader } from './CoursesHeader';
@@ -26,7 +25,9 @@ import { CoursesModals } from './CoursesModals';
 
 export default function Courses() {
   const dispatch = useAppDispatch();
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const authUser = useAppSelector(selectUser);
+  const authLoading = useAppSelector(selectIsLoading);
+  const isAuthenticated = !!authUser;
 
   // Redux selectors
   const offerings = useAppSelector(selectCourseOfferingsBySelectedSemester);
@@ -54,16 +55,12 @@ export default function Courses() {
   const isAdmin = user?.role === 'ADMIN';
 
   // Fetch data on component mount, but wait for authentication
+  const hasFetchedRef = useRef(false);
   useEffect(() => {
-    if (!isAuthenticated || authLoading) {
-      return;
-    }
-
-    const loadData = async () => {
-      await dispatch(fetchSemesters());
-      await dispatch(fetchCourseOfferings(undefined));
-    };
-    loadData();
+    if (authLoading || !isAuthenticated || hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
+    dispatch(fetchSemesters());
+    dispatch(fetchCourseOfferings(undefined));
   }, [dispatch, isAuthenticated, authLoading]);
 
   // Handle semester selection change

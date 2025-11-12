@@ -3,6 +3,7 @@ import userReducer from './slices/userSlice'
 import coursesReducer from './slices/coursesSlice'
 import courseOfferingsReducer from './slices/courseOfferingsSlice'
 import semestersReducer from './slices/semestersSlice'
+import teamsReducer from './slices/teamsSlice'
 
 export const store = configureStore({
   reducer: {
@@ -10,6 +11,7 @@ export const store = configureStore({
     courses: coursesReducer,
     courseOfferings: courseOfferingsReducer,
     semesters: semestersReducer,
+    teams: teamsReducer,
   }
 })
 

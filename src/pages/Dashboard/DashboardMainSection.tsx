@@ -3,10 +3,10 @@ import { Button } from '@/components/ui/button';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import { Card } from '@/components/ui/card';
 import { ChevronDown, Clock, Github, Terminal, Wrench } from 'lucide-react';
+import type { Team } from '@/services/types';
 import {
   activityLogs,
   containerLogs,
-  deploymentData,
   displayGithubPath,
   formatDateLabel,
   formatTime,
@@ -14,7 +14,13 @@ import {
   getStatusBadge,
 } from './shared';
 
-export default function DashboardMainSection() {
+interface DashboardMainSectionProps {
+  team: Team;
+}
+
+export default function DashboardMainSection({
+  team,
+}: DashboardMainSectionProps) {
   const [isDeploying, setIsDeploying] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const handleDeploy = () => {
@@ -27,23 +33,25 @@ export default function DashboardMainSection() {
         {/* Header */}
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            {getStatusBadge(deploymentData.status)}
-            <h1 className="text-3xl font-bold text-gray-900">
-              {deploymentData.teamName}
-            </h1>
+            {getStatusBadge('ready')}
+            <h1 className="text-3xl font-bold text-gray-900">{team.name}</h1>
           </div>
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-blue-600">
-              <Github className="h-4 w-4" />
-              <a
-                href={deploymentData.githubUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline"
-              >
-                {displayGithubPath(deploymentData.githubUrl)}
-              </a>
-            </div>
+            {team.projects &&
+              team.projects.length > 0 &&
+              team.projects[0]?.gitHubLink && (
+                <div className="flex items-center gap-2 text-blue-600">
+                  <Github className="h-4 w-4" />
+                  <a
+                    href={team.projects[0].gitHubLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:underline"
+                  >
+                    {displayGithubPath(team.projects[0].gitHubLink)}
+                  </a>
+                </div>
+              )}
             <div className="flex items-center gap-2">
               <input
                 type="text"

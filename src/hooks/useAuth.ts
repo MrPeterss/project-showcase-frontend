@@ -118,13 +118,17 @@ export const useAuth = () => {
     }
   }, [dispatch, syncUser, userState.user])
 
+  const lastProcessedTriggerRef = useRef<number>(0)
+
   // Also sync user when token is refreshed (e.g., from API interceptor)
   useEffect(() => {
     const handleTokenRefresh = async () => {
       const accessToken = tokenManager.getToken()
-      // Only fetch user if we have a token but no user, or if token was refreshed
-      if (accessToken && firebaseUser && (!userState.user || userState.tokenRefreshTrigger > 0)) {
+      // Only fetch user if we have a token and firebase user, and trigger has actually changed
+      if (accessToken && firebaseUser && userState.tokenRefreshTrigger > lastProcessedTriggerRef.current) {
         try {
+          // Update the ref before making the call to prevent duplicate calls
+          lastProcessedTriggerRef.current = userState.tokenRefreshTrigger
           // Get user information from /users/me endpoint
           const userResponse = await api.get('/users/me')
           dispatch(setUser(userResponse.data))
@@ -139,7 +143,7 @@ export const useAuth = () => {
     if (userState.tokenRefreshTrigger > 0) {
       handleTokenRefresh()
     }
-  }, [firebaseUser, userState.tokenRefreshTrigger, userState.user, dispatch])
+  }, [firebaseUser, userState.tokenRefreshTrigger, dispatch])
 
   const signInWithGoogle = async () => {
     dispatch(setError(null))

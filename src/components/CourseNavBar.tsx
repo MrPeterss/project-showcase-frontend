@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { ExternalLink } from 'lucide-react';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
-import { services } from '@/services';
+import { useMyTeamsByOffering } from '@/hooks/useTeams';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +21,12 @@ interface CourseNavBarProps {
   semester?: Semester;
 }
 
-function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester }: CourseNavBarProps) {
+function CourseNavBarComponent({
+  courseId,
+  courseName,
+  courseUserRole,
+  semester,
+}: CourseNavBarProps) {
   const location = useLocation();
   const { user } = useAuth();
   const [userTeams, setUserTeams] = useState<Team[]>([]);
@@ -34,64 +39,39 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
     window.open(`/dashboard/${teamId}`, '_blank', 'noopener,noreferrer');
   };
 
-  // Fetch teams for the course offering and filter by current user
-  useEffect(() => {
-    if (!courseId || !user) {
-      setTeamsLoading(false);
-      return;
-    }
-
-    const fetchUserTeams = async () => {
-      try {
-        setTeamsLoading(true);
-        const offeringId = parseInt(courseId, 10);
-        if (isNaN(offeringId)) {
-          setTeamsLoading(false);
-          return;
-        }
-
-        const teamsResponse = await services.teams.getMyTeams(offeringId);
-        setUserTeams(teamsResponse.data);
-      } catch (error) {
-        console.error('Error fetching user teams:', error);
-        setUserTeams([]);
-      } finally {
-        setTeamsLoading(false);
-      }
-    };
-
-    fetchUserTeams();
-  }, [courseId, user]);
+  // Fetch teams for the course offering and filter by current user via React Query
+  const offeringId = Number.isInteger(Number(courseId))
+    ? parseInt(courseId, 10)
+    : undefined;
+  const { data: myTeams, isLoading: myTeamsLoading } = useMyTeamsByOffering(
+    offeringId && user ? offeringId : undefined
+  );
+  React.useEffect(() => {
+    setTeamsLoading(myTeamsLoading);
+    setUserTeams(myTeams || []);
+  }, [myTeamsLoading, myTeams]);
 
   // Determine which tabs to show based on course-specific user role
   // Fall back to global user role if courseUserRole is not provided
   const getNavigationTabs = () => {
     // Use course-specific role if available, otherwise fall back to global role
     const role = courseUserRole || user?.role;
-    
+
     if (!role) return [];
 
-    const tabs = [
-      { path: `/courses/${courseId}`, label: 'Projects' }
-    ];
+    const tabs = [{ path: `/courses/${courseId}`, label: 'Projects' }];
 
     // Admins (global role) always see Settings tab
     if (user?.role === 'ADMIN') {
-      tabs.push(
-        { path: `/courses/${courseId}/settings`, label: 'Settings' }
-      );
-    } 
+      tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
+    }
     // Instructors see Settings tab
     else if (role === 'INSTRUCTOR') {
-      tabs.push(
-        { path: `/courses/${courseId}/settings`, label: 'Settings' }
-      );
+      tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
     }
     // Students see Dashboard tab
     else if (role === 'STUDENT') {
-      tabs.push(
-        { path: `/courses/${courseId}/dashboard`, label: 'Dashboard' }
-      );
+      tabs.push({ path: `/courses/${courseId}/dashboard`, label: 'Dashboard' });
     }
     // VIEWER role only sees Projects tab (no additional tabs)
 
@@ -99,7 +79,7 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
   };
 
   const navigationTabs = getNavigationTabs();
-  
+
   // Use course-specific role for display, fall back to global role
   const displayRole = courseUserRole || user?.role || 'STUDENT';
 
@@ -114,7 +94,9 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
           {/* Course Header */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-            <h2 className="text-xl font-semibold text-gray-900">{courseName}</h2>
+              <h2 className="text-xl font-semibold text-gray-900">
+                {courseName}
+              </h2>
               {semester && (
                 <Badge
                   variant="outline"
@@ -126,7 +108,7 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
             </div>
             <Badge variant="secondary">{displayRole}</Badge>
           </div>
-          
+
           {/* Navigation Tabs */}
           <nav className="flex space-x-8 items-center">
             {navigationTabs.map((tab) => (
@@ -146,7 +128,7 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
                 )}
               </Link>
             ))}
-            
+
             {/* Dashboard Tab for Teams */}
             {!teamsLoading && userTeams.length > 0 && (
               <>
@@ -169,11 +151,14 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
                     onMouseLeave={() => setIsDashboardHovered(false)}
                     className="relative"
                   >
-                    <DropdownMenu open={isDashboardHovered} onOpenChange={setIsDashboardHovered}>
+                    <DropdownMenu
+                      open={isDashboardHovered}
+                      onOpenChange={setIsDashboardHovered}
+                    >
                       <DropdownMenuTrigger asChild>
                         <button
                           className={cn(
-                            'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
+                            'px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
                             'text-muted-foreground'
                           )}
                         >
@@ -183,7 +168,6 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="start"
-                        sideOffset={2}
                         className="min-w-[200px]"
                       >
                         {userTeams.map((team) => (
@@ -192,7 +176,6 @@ function CourseNavBarComponent({ courseId, courseName, courseUserRole, semester 
                             onClick={() => handleDashboardClick(team.id)}
                             className="flex items-center gap-2 cursor-pointer"
                           >
-                            <ExternalLink className="h-3 w-3" />
                             {team.name}
                           </DropdownMenuItem>
                         ))}

@@ -7,6 +7,9 @@ import { useCourseContext } from '@/components/CourseLayout';
 import { ArrowLeft, Upload, Users, Lock, Eye, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { services } from '@/services';
+import { useUpdateCourseOffering } from '@/hooks/useCourseOfferings';
+import { useEnrollmentsByOffering, useCreateEnrollments, useDeleteEnrollment } from '@/hooks/useEnrollments';
+import { useCourseOfferings } from '@/hooks/useCourseOfferings';
 import type { Enrollment, CourseOffering } from '@/services/types';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
 
@@ -22,68 +25,60 @@ export default function CourseSettings() {
   } = useCourseContext();
   const { user } = useAuth();
 
+  // React Query hooks
+  const updateCourseOffering = useUpdateCourseOffering();
+  const createEnrollments = useCreateEnrollments();
+  const deleteEnrollment = useDeleteEnrollment();
+  const { data: allOfferings } = useCourseOfferings();
+
+  // Get enrollments using React Query
+  const offeringId = courseId ? parseInt(courseId, 10) : undefined;
+  const { data: enrollmentsData } = useEnrollmentsByOffering(offeringId);
+  const enrollments = enrollmentsData || [];
+
   // State for settings
   const [lockProjectServer, setLockProjectServer] = useState(false);
   const [studentInput, setStudentInput] = useState('');
   const [showAddStudents, setShowAddStudents] = useState(false);
   const [instructorInput, setInstructorInput] = useState('');
   const [showAddInstructors, setShowAddInstructors] = useState(false);
-  const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [deletingUserId, setDeletingUserId] = useState<number | null>(null);
-  const [availableOfferings, setAvailableOfferings] = useState<
-    CourseOffering[]
-  >([]);
   const [selectedViewableOfferings, setSelectedViewableOfferings] = useState<
     number[]
   >([]);
-  const [savingVisibility, setSavingVisibility] = useState(false);
 
-  // Fetch enrollments and available offerings when offering is loaded
+  // Compute available offerings from React Query data
+  const availableOfferings = allOfferings
+    ? allOfferings.filter((off) => {
+        // Exclude current offering
+        if (off.id === offeringId) return false;
+        // Include if user is admin globally
+        if (user?.role === 'ADMIN') return true;
+        // Include if user is instructor in this offering
+        return off.userRole === 'INSTRUCTOR';
+      })
+    : [];
+
+  // Set selected viewable offerings from settings when offering loads
   useEffect(() => {
-    const fetchPageData = async () => {
-      if (!offering || !courseId) return;
+    if (!offering) return;
 
-      const offeringId = parseInt(courseId, 10);
-      if (isNaN(offeringId)) {
-        return;
+    // Parse course_visibility from settings
+    // Settings might be a JSON object with course_visibility key
+    let courseVisibility: number[] = [];
+    
+    if (offering.settings) {
+      // Check if settings has course_visibility directly
+      if ('course_visibility' in offering.settings && Array.isArray((offering.settings as any).course_visibility)) {
+        courseVisibility = (offering.settings as any).course_visibility;
       }
-
-      // Set selected viewable offerings from settings
-      if (offering.settings?.canView) {
-        setSelectedViewableOfferings(offering.settings.canView);
+      // Fallback to canView for backwards compatibility
+      else if ('canView' in offering.settings && Array.isArray((offering.settings as any).canView)) {
+        courseVisibility = (offering.settings as any).canView;
       }
+    }
 
-      // Fetch enrollments
-      try {
-        const enrollmentsResponse =
-          await services.enrollments.getByCourseOffering(offeringId);
-        setEnrollments(enrollmentsResponse.data);
-      } catch (enrollmentsError) {
-        console.error('Error fetching enrollments:', enrollmentsError);
-        setEnrollments([]);
-      }
-
-      // Fetch all course offerings the user has access to (as instructor/admin)
-      try {
-        const allOfferingsResponse = await services.courseOfferings.getAll();
-        // Filter to only show offerings where user is instructor or admin
-        const accessibleOfferings = allOfferingsResponse.data.filter((off) => {
-          // Exclude current offering
-          if (off.id === offeringId) return false;
-          // Include if user is admin globally
-          if (user?.role === 'ADMIN') return true;
-          // Include if user is instructor in this offering
-          return off.userRole === 'INSTRUCTOR';
-        });
-        setAvailableOfferings(accessibleOfferings);
-      } catch (offeringsError) {
-        console.error('Error fetching available offerings:', offeringsError);
-        setAvailableOfferings([]);
-      }
-    };
-
-    fetchPageData();
-  }, [offering, courseId, user?.role]);
+    setSelectedViewableOfferings(courseVisibility);
+  }, [offering]);
 
   // Check course-specific role access after fetching offering
   useEffect(() => {
@@ -126,10 +121,10 @@ export default function CourseSettings() {
   const addStudents = async (
     students: Array<{ email: string; teamName?: string }>
   ) => {
-    if (!offering) return;
+    if (!offering || !offeringId) return;
 
     try {
-      // Create enrollments
+      // Create enrollments using React Query mutation
       const enrollmentData = {
         enrollments: students.map((s) => ({
           email: s.email,
@@ -137,7 +132,10 @@ export default function CourseSettings() {
         })),
       };
 
-      await services.enrollments.create(offering.id, enrollmentData);
+      await createEnrollments.mutateAsync({
+        offeringId: offering.id,
+        data: enrollmentData,
+      });
 
       // Group students by team and create/update teams
       const teamsMap = new Map<string, string[]>();
@@ -165,11 +163,6 @@ export default function CourseSettings() {
         }
       }
 
-      // Refresh enrollments
-      const enrollmentsResponse =
-        await services.enrollments.getByCourseOffering(offering.id);
-      setEnrollments(enrollmentsResponse.data);
-
       setStudentInput('');
       setShowAddStudents(false);
     } catch (error) {
@@ -193,10 +186,10 @@ export default function CourseSettings() {
   };
 
   const addInstructors = async (emails: string[]) => {
-    if (!offering) return;
+    if (!offering || !offeringId) return;
 
     try {
-      // Create enrollments with INSTRUCTOR role
+      // Create enrollments with INSTRUCTOR role using React Query mutation
       const enrollmentData = {
         enrollments: emails.map((email) => ({
           email,
@@ -204,12 +197,10 @@ export default function CourseSettings() {
         })),
       };
 
-      await services.enrollments.create(offering.id, enrollmentData);
-
-      // Refresh enrollments
-      const enrollmentsResponse =
-        await services.enrollments.getByCourseOffering(offering.id);
-      setEnrollments(enrollmentsResponse.data);
+      await createEnrollments.mutateAsync({
+        offeringId: offering.id,
+        data: enrollmentData,
+      });
 
       setInstructorInput('');
       setShowAddInstructors(false);
@@ -226,21 +217,16 @@ export default function CourseSettings() {
   };
 
   const handleRemoveEnrollment = async (userId: number) => {
-    if (!offering) return;
+    if (!offering || !offeringId) return;
 
     try {
-      setDeletingUserId(userId);
-      await services.enrollments.delete(offering.id, userId);
-
-      // Refresh enrollments list
-      const enrollmentsResponse =
-        await services.enrollments.getByCourseOffering(offering.id);
-      setEnrollments(enrollmentsResponse.data);
+      await deleteEnrollment.mutateAsync({
+        offeringId: offering.id,
+        userId,
+      });
     } catch (error) {
       console.error('Error removing enrollment:', error);
       // TODO: Show error message to user
-    } finally {
-      setDeletingUserId(null);
     }
   };
 
@@ -255,14 +241,17 @@ export default function CourseSettings() {
   };
 
   const handleSaveVisibilitySettings = async () => {
-    if (!offering) return;
+    if (!offering || !offeringId) return;
 
     try {
-      setSavingVisibility(true);
-      await services.courseOfferings.update(offering.id, {
-        settings: {
-          ...offering.settings,
-          canView: selectedViewableOfferings,
+      // Update settings with course_visibility as a JSON object
+      await updateCourseOffering.mutateAsync({
+        id: offering.id,
+        data: {
+          settings: {
+            ...offering.settings,
+            course_visibility: selectedViewableOfferings,
+          },
         },
       });
 
@@ -271,8 +260,6 @@ export default function CourseSettings() {
     } catch (error) {
       console.error('Error saving visibility settings:', error);
       // TODO: Show error message to user
-    } finally {
-      setSavingVisibility(false);
     }
   };
 
@@ -348,7 +335,7 @@ export default function CourseSettings() {
                           onClick={() =>
                             handleRemoveEnrollment(enrollment.userId)
                           }
-                          disabled={deletingUserId === enrollment.userId}
+                          disabled={deleteEnrollment.isPending}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -592,10 +579,10 @@ export default function CourseSettings() {
               <div className="flex justify-end">
                 <Button
                   onClick={handleSaveVisibilitySettings}
-                  disabled={true}
+                  disabled={updateCourseOffering.isPending}
                   className="bg-red-700 hover:bg-red-800 text-white"
                 >
-                  {savingVisibility ? 'Saving...' : 'Save Changes'}
+                  {updateCourseOffering.isPending ? 'Saving...' : 'Save Changes'}
                 </Button>
               </div>
             </CardContent>

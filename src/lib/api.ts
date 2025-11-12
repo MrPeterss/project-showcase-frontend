@@ -27,10 +27,42 @@ apiClient.interceptors.request.use(
     try {
       const isRefreshTokenEndpoint = config.url?.includes('/auth/refresh-token')
       
-      // If a refresh is in progress, wait for it to complete before making the request
-      // This ensures we use the freshest token and prevents duplicate refresh calls
-      // BUT: Skip waiting if this IS the refresh-token request itself (to prevent deadlock)
-      if (refreshTokenPromise && !isRefreshTokenEndpoint) {
+      // Skip token logic for refresh token endpoint itself
+      if (isRefreshTokenEndpoint) {
+        return config
+      }
+      
+      if (tokenManager.hasToken()) {
+        // If a refresh is already in progress, wait for it
+        if (!refreshTokenPromise) {
+          refreshTokenPromise = (async () => {
+            try {
+              const refreshResponse = await authServices.refreshToken()
+              const newAccessToken = refreshResponse.data.accessToken
+              
+              if (!newAccessToken) {
+                throw new Error('No access token in refresh response')
+              }
+              
+              tokenManager.setToken(newAccessToken)
+              dispatch(triggerUserRefresh())
+              
+              return newAccessToken
+            } catch (refreshError) {
+              console.error('Proactive token refresh failed:', refreshError)
+              tokenManager.clearToken()
+              throw refreshError
+            } finally {
+              setTimeout(() => {
+                refreshTokenPromise = null
+              }, 1000)
+            }
+          })()
+        }
+      }
+      
+      // If a refresh is in progress (from proactive refresh or error handler), wait for it
+      if (refreshTokenPromise) {
         try {
           await refreshTokenPromise
         } catch (error) {
@@ -40,7 +72,7 @@ apiClient.interceptors.request.use(
       
       const accessToken = tokenManager.getToken()
       
-      if (accessToken && !isRefreshTokenEndpoint) {
+      if (accessToken) {
         config.headers.Authorization = `Bearer ${accessToken}`
       }
       

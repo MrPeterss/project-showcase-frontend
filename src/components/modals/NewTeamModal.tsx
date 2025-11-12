@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { services } from '@/services';
+import { useCreateTeam } from '@/hooks/useTeams';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 
@@ -27,12 +27,14 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const createTeam = useCreateTeam(courseOfferingId);
+
   const parseEmails = (input: string): string[] => {
     // Split by comma, semicolon, or newline, then trim and filter empty strings
     return input
       .split(/[,\n;]/)
-      .map(email => email.trim())
-      .filter(email => email.length > 0);
+      .map((email) => email.trim())
+      .filter((email) => email.length > 0);
   };
 
   const validateEmail = (email: string): boolean => {
@@ -54,7 +56,7 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
       if (emails.length === 0) {
         newErrors.emails = 'At least one email is required';
       } else {
-        const invalidEmails = emails.filter(email => !validateEmail(email));
+        const invalidEmails = emails.filter((email) => !validateEmail(email));
         if (invalidEmails.length > 0) {
           newErrors.emails = `Invalid email(s): ${invalidEmails.join(', ')}`;
         }
@@ -77,8 +79,7 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
 
     try {
       const emails = parseEmails(emailsInput);
-      
-      await services.teams.create(courseOfferingId, {
+      await createTeam.mutateAsync({
         name: teamName.trim(),
         memberEmails: emails,
         courseOfferingId,
@@ -128,7 +129,10 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
           )}
 
           <div>
-            <label htmlFor="teamName" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="teamName"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Team Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -153,7 +157,10 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
           </div>
 
           <div>
-            <label htmlFor="emails" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="emails"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Member Emails <span className="text-red-500">*</span>
             </label>
             <textarea
@@ -172,7 +179,8 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
               disabled={isSubmitting}
             />
             <p className="mt-1 text-xs text-gray-500">
-              Enter email addresses separated by commas, semicolons, or new lines
+              Enter email addresses separated by commas, semicolons, or new
+              lines
             </p>
             {errors.emails && (
               <p className="mt-1 text-sm text-red-600">{errors.emails}</p>
@@ -201,4 +209,3 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
     </Modal>
   );
 };
-

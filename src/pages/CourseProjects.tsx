@@ -5,10 +5,21 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useCourseContext } from '@/components/CourseLayout';
 import { ArrowLeft, Plus, ExternalLink, Pencil } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { services } from '@/services';
+import { useEffect, useMemo, useState } from 'react';
+import { useTeamsByOffering } from '@/hooks/useTeams';
 import { NewTeamModal, EditTeamModal } from '@/components/modals';
 import type { Team } from '@/services/types';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import {
+  selectTeamsByOffering,
+  selectTeamsError,
+  selectTeamsLoading,
+} from '@/store/selectors/teamsSelectors';
+import {
+  setTeams,
+  setTeamsError,
+  setTeamsLoading,
+} from '@/store/slices/teamsSlice';
 
 export default function CourseProjects() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -19,40 +30,59 @@ export default function CourseProjects() {
     error: offeringError,
   } = useCourseContext();
 
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [teamsLoading, setTeamsLoading] = useState(true);
   const [isNewTeamModalOpen, setIsNewTeamModalOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [isEditTeamModalOpen, setIsEditTeamModalOpen] = useState(false);
 
   const { user } = useAuth();
+  const dispatch = useAppDispatch();
 
-  // Fetch teams for this offering
+  const offeringId = useMemo(() => {
+    if (!courseId) return undefined;
+    const n = parseInt(courseId, 10);
+    return isNaN(n) ? undefined : n;
+  }, [courseId]);
+
+  const {
+    data: teamsData,
+    isLoading: teamsQueryLoading,
+    error: teamsQueryError,
+  } = useTeamsByOffering(offering && offeringId ? offeringId : undefined);
+
+  const teams = useAppSelector((state) =>
+    selectTeamsByOffering(state, offeringId)
+  );
+  const teamsLoading = useAppSelector((state) =>
+    selectTeamsLoading(state, offeringId)
+  );
+  const teamsError = useAppSelector((state) =>
+    selectTeamsError(state, offeringId)
+  );
+
   useEffect(() => {
-    if (!offering || !courseId) return;
+    if (!offeringId) return;
+    dispatch(
+      setTeamsLoading({ offeringId, isLoading: Boolean(teamsQueryLoading) })
+    );
+  }, [dispatch, offeringId, teamsQueryLoading]);
 
-    const fetchTeams = async () => {
-      try {
-        setTeamsLoading(true);
-        const offeringId = parseInt(courseId, 10);
-        if (isNaN(offeringId)) {
-          return;
-        }
+  useEffect(() => {
+    if (!offeringId || teamsData === undefined) return;
+    dispatch(setTeams({ offeringId, teams: teamsData }));
+  }, [dispatch, offeringId, teamsData]);
 
-        const teamsResponse = await services.teams.getByCourseOffering(
-          offeringId
-        );
-        setTeams(teamsResponse.data);
-      } catch (teamsError) {
-        console.error('Error fetching teams:', teamsError);
-        setTeams([]);
-      } finally {
-        setTeamsLoading(false);
-      }
-    };
-
-    fetchTeams();
-  }, [offering, courseId]);
+  useEffect(() => {
+    if (!offeringId) return;
+    if (teamsQueryError) {
+      const message =
+        teamsQueryError instanceof Error
+          ? teamsQueryError.message
+          : 'Failed to load teams';
+      dispatch(setTeamsError({ offeringId, error: message }));
+    } else {
+      dispatch(setTeamsError({ offeringId, error: null }));
+    }
+  }, [dispatch, offeringId, teamsQueryError]);
 
   // Get site URL from environment variable or use window location
   const siteUrl = import.meta.env.VITE_SITE_URL || window.location.hostname;
@@ -66,7 +96,7 @@ export default function CourseProjects() {
   };
 
   const loading = offeringLoading || teamsLoading;
-  const error = offeringError;
+  const error = offeringError || teamsError;
 
   return (
     <div className="container mx-auto p-6">
@@ -229,20 +259,7 @@ export default function CourseProjects() {
                 isOpen={isNewTeamModalOpen}
                 onClose={() => setIsNewTeamModalOpen(false)}
                 courseOfferingId={offering.id}
-                onSuccess={() => {
-                  // Refresh teams after successful creation
-                  const offeringId = parseInt(courseId!, 10);
-                  if (!isNaN(offeringId)) {
-                    services.teams
-                      .getByCourseOffering(offeringId)
-                      .then((response) => {
-                        setTeams(response.data);
-                      })
-                      .catch((error) => {
-                        console.error('Error refreshing teams:', error);
-                      });
-                  }
-                }}
+                onSuccess={() => {}}
               />
               <EditTeamModal
                 isOpen={isEditTeamModalOpen}
@@ -250,22 +267,8 @@ export default function CourseProjects() {
                   setIsEditTeamModalOpen(false);
                   setEditingTeam(null);
                 }}
-                courseOfferingId={offering.id}
                 team={editingTeam}
-                onSuccess={() => {
-                  // Refresh teams after successful update
-                  const offeringId = parseInt(courseId!, 10);
-                  if (!isNaN(offeringId)) {
-                    services.teams
-                      .getByCourseOffering(offeringId)
-                      .then((response) => {
-                        setTeams(response.data);
-                      })
-                      .catch((error) => {
-                        console.error('Error refreshing teams:', error);
-                      });
-                  }
-                }}
+                onSuccess={() => {}}
               />
             </>
           )}

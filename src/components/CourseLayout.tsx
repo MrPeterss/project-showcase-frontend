@@ -1,15 +1,8 @@
 import { useParams, Outlet } from 'react-router-dom';
-import {
-  useEffect,
-  useState,
-  createContext,
-  useContext,
-  useMemo,
-  useCallback,
-} from 'react';
+import React, { useState, createContext, useContext, useMemo } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { CourseNavBar } from '@/components/CourseNavBar';
-import { services } from '@/services';
+import { useCourseOffering } from '@/hooks/useCourseOfferings';
 import type { CourseOffering } from '@/services/types';
 
 interface CourseContextType {
@@ -57,47 +50,20 @@ export function CourseLayout() {
     courseId,
   ]);
 
-  // Memoize fetchOffering to prevent unnecessary re-renders
-  const fetchOffering = useCallback(async () => {
-    if (!courseId) return;
+  const offeringId = courseId ? parseInt(courseId, 10) : NaN;
+  const {
+    data: offeringData,
+    isLoading,
+    error: offeringError,
+    refetch,
+  } = useCourseOffering(Number.isNaN(offeringId) ? undefined : offeringId);
 
-    try {
-      setLoading(true);
-      setError(null);
-
-      const offeringId = parseInt(courseId, 10);
-      if (isNaN(offeringId)) {
-        setError('Invalid course offering ID');
-        return;
-      }
-
-      const offeringResponse = await services.courseOfferings.getById(
-        offeringId
-      );
-      setOffering(offeringResponse.data);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Failed to load course offering';
-      setError(errorMessage);
-      console.error('Error fetching course offering:', err);
-
-      // If 401/403, user doesn't have access
-      if (
-        (err as any)?.response?.status === 401 ||
-        (err as any)?.response?.status === 403
-      ) {
-        // The hook will handle redirection
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [courseId]);
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchOffering();
-    }
-  }, [isAuthenticated, fetchOffering]);
+  // Bridge to local state shape used by context consumers
+  React.useEffect(() => {
+    setLoading(isLoading);
+    setOffering(offeringData ?? null);
+    setError((offeringError as any)?.message ?? null);
+  }, [isLoading, offeringData, offeringError]);
 
   // If user doesn't have access, the hook will handle redirection
   // This early return must come AFTER all hooks are called
@@ -109,7 +75,9 @@ export function CourseLayout() {
     offering,
     loading,
     error,
-    refetch: fetchOffering,
+    refetch: async () => {
+      await refetch();
+    },
   };
 
   return (

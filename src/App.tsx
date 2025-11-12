@@ -19,17 +19,16 @@ import Courses from './pages/Courses';
 import CourseProjects from './pages/CourseProjects';
 import CourseDashboard from './pages/CourseDashboard';
 import CourseSettings from './pages/CourseSettings';
+import Dashboard from './pages/Dashboard';
 import LoginCard from './components/LoginCard';
 
 function AppContent() {
   const location = useLocation();
-
-  // Don't show navigation on login page, main courses page, or course detail pages
-  // Navigation will be handled within the course detail page itself
   const shouldShowNav =
     location.pathname !== '/login' &&
     location.pathname !== '/courses' &&
-    !location.pathname.startsWith('/courses/');
+    !location.pathname.startsWith('/courses/') &&
+    !location.pathname.startsWith('/dashboard/');
 
   return (
     <div className="min-h-svh">
@@ -45,6 +44,7 @@ function AppContent() {
             <Route path="dashboard" element={<CourseDashboard />} />
             <Route path="settings" element={<CourseSettings />} />
           </Route>
+          <Route path="/dashboard/:teamId" element={<Dashboard />} />
           <Route path="/login" element={<LoginCard />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
