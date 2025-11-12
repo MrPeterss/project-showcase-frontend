@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useCourseContext } from '@/components/CourseLayout';
-import { ArrowLeft, Plus, ExternalLink, Pencil } from 'lucide-react';
+import { ArrowLeft, Plus, ExternalLink, Pencil, LayoutDashboard } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useTeamsByOffering } from '@/hooks/useTeams';
 import { NewTeamModal, EditTeamModal } from '@/components/modals';
@@ -59,6 +59,7 @@ export default function CourseProjects() {
   );
 
   const canManage = effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN';
+  const isAdmin = effectiveRole === 'ADMIN';
 
   useEffect(() => {
     if (!offeringId) return;
@@ -187,8 +188,16 @@ export default function CourseProjects() {
                         </th>
                         <th className="text-left p-3 font-semibold">Members</th>
                         <th className="text-left p-3 font-semibold">
+                          Last Updated
+                        </th>
+                        <th className="text-left p-3 font-semibold">
                           Project Link
                         </th>
+                        {isAdmin && (
+                          <th className="text-left p-3 font-semibold">
+                            Dashboard
+                          </th>
+                        )}
                         {canManage && (
                           <th className="text-right p-3 font-semibold">
                             Actions
@@ -197,51 +206,78 @@ export default function CourseProjects() {
                       </tr>
                     </thead>
                     <tbody>
-                      {teams.map((team) => (
-                        <tr key={team.id} className="border-b hover:bg-gray-50">
-                          <td className="text-left p-3 font-medium">
-                            {team.name}
-                          </td>
-                          <td className="text-left p-3">
-                            <Badge variant="outline">
-                              {team.members?.length || 0}
-                            </Badge>
-                          </td>
-                          <td className="text-left p-3">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const projectUrl = getProjectUrl(team.name);
-                                window.open(
-                                  projectUrl,
-                                  '_blank',
-                                  'noopener,noreferrer'
-                                );
-                              }}
-                              className="flex items-center gap-2"
-                            >
-                              <ExternalLink className="h-4 w-4" />
-                              Open Project
-                            </Button>
-                          </td>
-                          {canManage && (
-                            <td className="text-right p-3">
+                      {teams.map((team) => {
+                        // Get the most recent deployment date
+                        const lastDeployed = team.projects && team.projects.length > 0
+                          ? team.projects[0].deployedAt
+                          : null;
+
+                        return (
+                          <tr key={team.id} className="border-b hover:bg-gray-50">
+                            <td className="text-left p-3 font-medium">
+                              {team.name}
+                            </td>
+                            <td className="text-left p-3">
+                              <Badge variant="outline">
+                                {team.members?.length || 0}
+                              </Badge>
+                            </td>
+                            <td className="text-left p-3 text-sm text-muted-foreground">
+                              {lastDeployed
+                                ? new Date(lastDeployed).toLocaleString()
+                                : 'Not deployed'}
+                            </td>
+                            <td className="text-left p-3">
                               <Button
-                                variant="ghost"
+                                variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  setEditingTeam(team);
-                                  setIsEditTeamModalOpen(true);
+                                  const projectUrl = getProjectUrl(team.name);
+                                  window.open(
+                                    projectUrl,
+                                    '_blank',
+                                    'noopener,noreferrer'
+                                  );
                                 }}
-                                className="text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                                className="flex items-center gap-2"
                               >
-                                <Pencil className="h-4 w-4" />
+                                <ExternalLink className="h-4 w-4" />
+                                Open Project
                               </Button>
                             </td>
-                          )}
-                        </tr>
-                      ))}
+                            {isAdmin && (
+                              <td className="text-left p-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    window.open(`/dashboard/${team.id}`, '_blank', 'noopener,noreferrer');
+                                  }}
+                                  className="flex items-center gap-2"
+                                >
+                                  <LayoutDashboard className="h-4 w-4" />
+                                  View Dashboard
+                                </Button>
+                              </td>
+                            )}
+                            {canManage && (
+                              <td className="text-right p-3">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingTeam(team);
+                                    setIsEditTeamModalOpen(true);
+                                  }}
+                                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
