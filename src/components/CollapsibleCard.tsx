@@ -1,12 +1,12 @@
 import { useState, type ReactNode } from 'react';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { ChevronDown } from 'lucide-react';
 
 type CollapsibleCardProps = {
   title: string;
   icon?: ReactNode;
   defaultOpen?: boolean;
-  maxBodyHeightClass?: string; // e.g., "max-h-80"
+  maxBodyHeightClass?: string; 
   onToggle?: (isOpen: boolean) => void;
   children: ReactNode;
 };
