@@ -9,16 +9,18 @@ export default function Dashboard() {
   const { teamId } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
-  
+
   const teamIdNum = useMemo(() => {
     if (!teamId) return undefined;
     const n = parseInt(teamId, 10);
     return isNaN(n) ? undefined : n;
   }, [teamId]);
 
-  const { data: team, isLoading: loading, error } = useTeam(
-    isAuthenticated && !authLoading ? teamIdNum : undefined
-  );
+  const {
+    data: team,
+    isLoading: loading,
+    error,
+  } = useTeam(isAuthenticated && !authLoading ? teamIdNum : undefined);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -27,6 +29,7 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, authLoading, navigate]);
 
+  // Show loading state while authenticating or loading team data
   if (authLoading || (isAuthenticated && loading)) {
     return (
       <div className="flex min-h-screen bg-gray-50 items-center justify-center">
@@ -37,7 +40,8 @@ export default function Dashboard() {
     );
   }
 
-  if (error || !team) {
+  // Only show error if we're done loading and there's actually an error or no team
+  if (!authLoading && isAuthenticated && !loading && (error || !team)) {
     return (
       <div className="flex min-h-screen bg-gray-50 items-center justify-center">
         <div className="text-center">
@@ -47,6 +51,11 @@ export default function Dashboard() {
         </div>
       </div>
     );
+  }
+
+  // At this point, team should be defined, but add a safety check
+  if (!team) {
+    return null;
   }
 
   return (

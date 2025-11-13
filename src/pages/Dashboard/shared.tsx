@@ -58,21 +58,26 @@ export const getStatusIcon = (status: string) => {
 
 export const getStatusBadge = (status: string) => {
   const variants = {
-    ready: 'bg-green-100 text-green-800 border-green-200',
-    building: 'bg-blue-100 text-blue-800 border-blue-200',
-    error: 'bg-red-100 text-red-800 border-red-200',
-    queued: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    ready: 'bg-green-100 text-green-800 border-green-200 hover:bg-green-100',
+    building: 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100',
+    error: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
+    queued: 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100',
   } as const;
 
   return (
-    <Badge className={`${variants[status as keyof typeof variants]} border`}>
+    <Badge 
+      className={`${variants[status as keyof typeof variants]} border cursor-default`}
+    >
       {getStatusIcon(status)}
       <span className="ml-1 capitalize">{status}</span>
     </Badge>
   );
 };
 
-export const displayGithubPath = (url: string) => url.replace(/^https?:\/\/github\.com\//, '');
+export const displayGithubPath = (url: string | null | undefined) => {
+  if (!url) return '';
+  return url.replace(/^https?:\/\/github\.com\//, '');
+};
 
 export const formatTimestamp = (isoLike: string) => {
   const normalized = isoLike.replace(' ', 'T');
