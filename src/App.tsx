@@ -18,6 +18,7 @@ import { CourseLayout } from './components/CourseLayout';
 import Courses from './pages/Courses';
 import CourseProjects from './pages/CourseProjects';
 import CourseDashboard from './pages/CourseDashboard';
+import CourseTeamDashboard from './pages/CourseTeamDashboard';
 import CourseSettings from './pages/CourseSettings';
 import Dashboard from './pages/Dashboard';
 import LoginCard from './components/LoginCard';
@@ -42,6 +43,7 @@ function AppContent() {
           <Route path="/courses/:courseId" element={<CourseLayout />}>
             <Route index element={<CourseProjects />} />
             <Route path="dashboard" element={<CourseDashboard />} />
+            <Route path="dashboard/:teamId" element={<CourseTeamDashboard />} />
             <Route path="settings" element={<CourseSettings />} />
           </Route>
           <Route path="/dashboard/:teamId" element={<Dashboard />} />

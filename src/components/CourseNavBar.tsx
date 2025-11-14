@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { useCourseContext } from '@/components/CourseLayout';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ExternalLink, GraduationCap, Shield } from 'lucide-react';
+import { GraduationCap, Shield, X } from 'lucide-react';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
 import { useMyTeamsByOffering } from '@/hooks/useTeams';
+import { useDashboardTabs } from '@/context/DashboardTabsContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,9 +31,11 @@ function CourseNavBarComponent({
   semester,
 }: CourseNavBarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { viewAsStudent, effectiveRole, toggleViewAsStudent } =
     useCourseContext();
+  const { openTabs, removeTab, isTabOpen } = useDashboardTabs();
   const [userTeams, setUserTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(true);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
@@ -40,8 +43,11 @@ function CourseNavBarComponent({
   const isActive = (path: string) => location.pathname === path;
 
   const handleDashboardClick = (teamId: number) => {
-    window.open(`/dashboard/${teamId}`, '_blank', 'noopener,noreferrer');
+    navigate(`/courses/${courseId}/dashboard/${teamId}`);
   };
+
+  // Check if we're on a dashboard route
+  const isOnDashboardRoute = location.pathname.startsWith(`/courses/${courseId}/dashboard`);
 
   // Fetch teams for the course offering and filter by current user via React Query
   const offeringId = Number.isInteger(Number(courseId))
@@ -50,17 +56,42 @@ function CourseNavBarComponent({
   const { data: myTeams, isLoading: myTeamsLoading } = useMyTeamsByOffering(
     offeringId && user ? offeringId : undefined
   );
-  React.useEffect(() => {
+  useEffect(() => {
     setTeamsLoading(myTeamsLoading);
     setUserTeams(myTeams || []);
   }, [myTeamsLoading, myTeams]);
 
   const isAdmin = user?.role === 'ADMIN';
 
-  // Determine which tabs to show based on course-specific user role
-  // Fall back to global user role if courseUserRole is not provided
+  const currentTeamIdMatch = location.pathname.match(`/courses/${courseId}/dashboard/(\\d+)`);
+  const currentTeamId = currentTeamIdMatch ? parseInt(currentTeamIdMatch[1], 10) : null;
+
+  useEffect(() => {
+    if (
+      isAdmin &&
+      !viewAsStudent &&
+      currentTeamId &&
+      isOnDashboardRoute &&
+      !isTabOpen(currentTeamId) &&
+      userTeams.every((t) => t.id !== currentTeamId)
+    ) {
+      navigate(`/courses/${courseId}`, { replace: true });
+    }
+  }, [isAdmin, viewAsStudent, currentTeamId, isOnDashboardRoute, isTabOpen, userTeams, navigate, courseId]);
+
+  const handleCloseTab = (e: React.MouseEvent, teamId: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const isCurrentlyOnTab = location.pathname === `/courses/${courseId}/dashboard/${teamId}`;
+    removeTab(teamId);
+    
+    if (isCurrentlyOnTab) {
+      navigate(`/courses/${courseId}`, { replace: true });
+    }
+  };
+
   const getNavigationTabs = () => {
-    // Use course-specific role if available, otherwise fall back to global role
     const normalizedRole =
       viewAsStudent && isAdmin
         ? 'STUDENT'
@@ -70,22 +101,17 @@ function CourseNavBarComponent({
 
     const tabs = [{ path: `/courses/${courseId}`, label: 'Projects' }];
 
-    // Admins (global role) always see Settings tab when not viewing as student
     if (isAdmin && !viewAsStudent) {
       tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
-    }
-    // Instructors see Settings tab
-    else if (normalizedRole === 'INSTRUCTOR') {
+    } else if (normalizedRole === 'INSTRUCTOR') {
       tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
     }
-    // VIEWER role only sees Projects tab (no additional tabs)
 
     return tabs;
   };
 
   const navigationTabs = getNavigationTabs();
 
-  // Use course-specific role for display, fall back to global role
   const displayRole = (() => {
     if (isAdmin) {
       return viewAsStudent ? 'STUDENT (PREVIEW)' : 'ADMIN';
@@ -101,7 +127,6 @@ function CourseNavBarComponent({
     <div className="bg-gray-50 border-b border-gray-200">
       <div className="container mx-auto max-w-6xl px-4">
         <div className="py-4">
-          {/* Course Header */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-semibold text-gray-900">
@@ -145,7 +170,6 @@ function CourseNavBarComponent({
             </div>
           </div>
 
-          {/* Navigation Tabs */}
           <nav className="flex space-x-8 items-center">
             {navigationTabs.map((tab) => (
               <Link
@@ -165,23 +189,24 @@ function CourseNavBarComponent({
               </Link>
             ))}
 
-            {/* Dashboard Tab for Teams */}
             {!teamsLoading && userTeams.length > 0 && (
               <>
                 {userTeams.length === 1 ? (
-                  // Single team: simple clickable tab
-                  <button
-                    onClick={() => handleDashboardClick(userTeams[0].id)}
+                  <Link
+                    to={`/courses/${courseId}/dashboard/${userTeams[0].id}`}
                     className={cn(
-                      'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
-                      'text-muted-foreground'
+                      'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground',
+                      isOnDashboardRoute
+                        ? 'text-foreground'
+                        : 'text-muted-foreground'
                     )}
                   >
                     Dashboard
-                    <ExternalLink className="h-3 w-3" />
-                  </button>
+                    {isOnDashboardRoute && (
+                      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+                    )}
+                  </Link>
                 ) : (
-                  // Multiple teams: tab with click dropdown
                   <DropdownMenu
                     open={isDashboardOpen}
                     onOpenChange={setIsDashboardOpen}
@@ -189,12 +214,16 @@ function CourseNavBarComponent({
                     <DropdownMenuTrigger asChild>
                       <button
                         className={cn(
-                          'px-1 py-2 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5',
-                          'text-muted-foreground'
+                          'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground',
+                          isOnDashboardRoute
+                            ? 'text-foreground'
+                            : 'text-muted-foreground'
                         )}
                       >
                         Dashboard
-                        <ExternalLink className="h-3 w-3" />
+                        {isOnDashboardRoute && (
+                          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+                        )}
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
@@ -202,22 +231,71 @@ function CourseNavBarComponent({
                       className="min-w-[200px]"
                       onCloseAutoFocus={(e) => e.preventDefault()}
                     >
-                      {userTeams.map((team) => (
-                        <DropdownMenuItem
-                          key={team.id}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleDashboardClick(team.id);
-                            setIsDashboardOpen(false);
-                          }}
-                          className="flex items-center gap-2 cursor-pointer"
-                        >
-                          {team.name}
-                        </DropdownMenuItem>
-                      ))}
+                      {userTeams.map((team) => {
+                        const teamDashboardPath = `/courses/${courseId}/dashboard/${team.id}`;
+                        const isTeamActive = location.pathname === teamDashboardPath;
+                        return (
+                          <DropdownMenuItem
+                            key={team.id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleDashboardClick(team.id);
+                              setIsDashboardOpen(false);
+                            }}
+                            className={cn(
+                              'flex items-center gap-2 cursor-pointer',
+                              isTeamActive && 'bg-accent'
+                            )}
+                          >
+                            {team.name}
+                          </DropdownMenuItem>
+                        );
+                      })}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
+              </>
+            )}
+
+            {isAdmin && !viewAsStudent && openTabs.length > 0 && (
+              <>
+                {openTabs.map((tab) => {
+                  const tabPath = `/courses/${courseId}/dashboard/${tab.teamId}`;
+                  const isTabActive = location.pathname === tabPath;
+                  
+                  return (
+                    <Link
+                      key={tab.teamId}
+                      to={tabPath}
+                      className={cn(
+                        'relative px-3 py-1.5 text-sm font-medium transition-colors hover:text-foreground flex items-center gap-1.5 max-w-[180px] min-w-0 rounded-md bg-gray-100 hover:bg-gray-200',
+                        isTabActive ? 'text-foreground bg-gray-200' : 'text-muted-foreground'
+                      )}
+                    >
+                      <span className="truncate flex-1 min-w-0">
+                        {tab.teamName}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleCloseTab(e, tab.teamId);
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        className="p-1.5 hover:bg-gray-300 rounded transition-colors flex-shrink-0 -mr-1"
+                        aria-label="Close tab"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                      {isTabActive && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+                      )}
+                    </Link>
+                  );
+                })}
               </>
             )}
           </nav>

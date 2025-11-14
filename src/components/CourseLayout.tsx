@@ -4,6 +4,7 @@ import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { CourseNavBar } from '@/components/CourseNavBar';
 import { useAuth } from '@/hooks/useAuth';
 import { useCourseOffering } from '@/hooks/useCourseOfferings';
+import { DashboardTabsProvider } from '@/context/DashboardTabsContext';
 import type { CourseOffering, Role } from '@/services/types';
 
 interface CourseContextType {
@@ -139,9 +140,8 @@ export function CourseLayout() {
 
     const allowedPaths = new Set<string>([basePath]);
 
-    if (effectiveRole === 'STUDENT') {
-      allowedPaths.add(`${basePath}/dashboard`);
-    }
+    // Allow dashboard routes for all roles (dashboard/:teamId)
+    allowedPaths.add(`${basePath}/dashboard`);
 
     if (effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN') {
       allowedPaths.add(`${basePath}/settings`);
@@ -151,7 +151,10 @@ export function CourseLayout() {
       path.replace(/\/$/, '')
     );
 
-    const isAllowed = normalizedAllowed.some((path) => path === normalizedPath);
+    // Check if path matches exactly or starts with an allowed path (for nested routes like dashboard/:teamId)
+    const isAllowed = normalizedAllowed.some((path) => 
+      path === normalizedPath || normalizedPath.startsWith(path + '/')
+    );
 
     if (!isAllowed) {
       navigate(basePath, { replace: true });
@@ -196,20 +199,24 @@ export function CourseLayout() {
 
   return (
     <CourseContext.Provider value={contextValue}>
-      <div>
-        {/* Course Navigation - Only render when we have data or are loading */}
-        {(offering || loading) && (
-          <CourseNavBar
-            courseId={courseId!}
-            courseName={courseName}
-            courseUserRole={offering?.userRole}
-            semester={offering?.semester}
-          />
-        )}
+      <DashboardTabsProvider>
+        <div className="flex flex-col min-h-screen bg-gray-50">
+          {/* Course Navigation - Only render when we have data or are loading */}
+          {(offering || loading) && (
+            <CourseNavBar
+              courseId={courseId!}
+              courseName={courseName}
+              courseUserRole={offering?.userRole}
+              semester={offering?.semester}
+            />
+          )}
 
-        {/* Render child routes */}
-        <Outlet />
-      </div>
+          {/* Render child routes */}
+          <div className="flex flex-1 min-h-0">
+            <Outlet />
+          </div>
+        </div>
+      </DashboardTabsProvider>
     </CourseContext.Provider>
   );
 }

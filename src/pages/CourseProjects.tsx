@@ -6,7 +6,8 @@ import { useCourseContext } from '@/components/CourseLayout';
 import { useAuth } from '@/hooks/useAuth';
 import { ArrowLeft, Plus, ExternalLink, Pencil, LayoutDashboard } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useTeamsByOffering } from '@/hooks/useTeams';
+import { useTeamsByOffering, useMyTeamsByOffering } from '@/hooks/useTeams';
+import { useDashboardTabs } from '@/context/DashboardTabsContext';
 import { NewTeamModal, EditTeamModal } from '@/components/modals';
 import type { Team } from '@/services/types';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -30,6 +31,8 @@ export default function CourseProjects() {
     error: offeringError,
     effectiveRole,
   } = useCourseContext();
+  const { user } = useAuth();
+  const { addTab } = useDashboardTabs();
 
   const [isNewTeamModalOpen, setIsNewTeamModalOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
@@ -42,6 +45,11 @@ export default function CourseProjects() {
     const n = parseInt(courseId, 10);
     return isNaN(n) ? undefined : n;
   }, [courseId]);
+
+  // Get user's teams to check if admin is viewing a team they're not part of
+  const { data: myTeams } = useMyTeamsByOffering(
+    offeringId && user ? offeringId : undefined
+  );
 
   const {
     data: teamsData,
@@ -59,7 +67,6 @@ export default function CourseProjects() {
     selectTeamsError(state, offeringId)
   );
 
-  const { user } = useAuth();
   const canManage = effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN';
   const isAdmin = user?.role === 'ADMIN' && effectiveRole === 'ADMIN';
 
@@ -192,14 +199,14 @@ export default function CourseProjects() {
                         <th className="text-left p-3 font-semibold">
                           Last Updated
                         </th>
-                        <th className={`p-3 font-semibold ${canManage ? 'text-left' : 'text-right'}`}>
-                          Project Link
-                        </th>
                         {isAdmin && (
                           <th className="text-left p-3 font-semibold">
                             Dashboard
                           </th>
                         )}
+                        <th className={`p-3 font-semibold ${canManage ? 'text-left' : 'text-right'}`}>
+                          Project Link
+                        </th>
                         {canManage && (
                           <th className="text-right p-3 font-semibold">
                             Actions
@@ -229,6 +236,26 @@ export default function CourseProjects() {
                                 ? new Date(lastDeployed).toLocaleString()
                                 : 'Not deployed'}
                             </td>
+                            {isAdmin && (
+                              <td className="text-left p-3">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    // If admin is viewing a team they're not part of, add it as a tab first
+                                    if (myTeams && !myTeams.some((t: Team) => t.id === team.id)) {
+                                      addTab(team.id, team.name);
+                                    }
+                                    // Then navigate
+                                    navigate(`/courses/${courseId}/dashboard/${team.id}`);
+                                  }}
+                                  className="flex items-center gap-2"
+                                >
+                                  <LayoutDashboard className="h-4 w-4" />
+                                  View Dashboard
+                                </Button>
+                              </td>
+                            )}
                             <td className={`p-3 ${canManage ? 'text-left' : 'text-right'}`}>
                               <div className={canManage ? '' : 'flex justify-end'}>
                                 <Button
@@ -249,21 +276,6 @@ export default function CourseProjects() {
                                 </Button>
                               </div>
                             </td>
-                            {isAdmin && (
-                              <td className="text-left p-3">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    window.open(`/dashboard/${team.id}`, '_blank', 'noopener,noreferrer');
-                                  }}
-                                  className="flex items-center gap-2"
-                                >
-                                  <LayoutDashboard className="h-4 w-4" />
-                                  View Dashboard
-                                </Button>
-                              </td>
-                            )}
                             {canManage && (
                               <td className="text-right p-3">
                                 <Button
