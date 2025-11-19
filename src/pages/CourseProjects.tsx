@@ -99,11 +99,15 @@ export default function CourseProjects() {
   const siteUrl = import.meta.env.VITE_SITE_URL || window.location.hostname;
 
   // Generate project URL for a team
-  const getProjectUrl = (teamName: string) => {
-    // Format: teamname.{site_URL}
-    // Remove any spaces and convert to lowercase for URL
-    const sanitizedTeamName = teamName.toLowerCase().replace(/\s+/g, '');
-    return `https://${sanitizedTeamName}.${siteUrl}`;
+  const getProjectUrl = (team: Team) => {
+    // Prefer container name from the latest project when available
+    const latestProject = team.projects && team.projects.length > 0 ? team.projects[0] : null;
+    const rawName = latestProject?.containerName?.replace(/^\//, '') || team.name;
+
+    // Format: {container-name}.{site_URL}
+    // Remove slashes/spaces and convert to lowercase for URL
+    const sanitizedName = rawName.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    return `https://${sanitizedName}.${siteUrl}`;
   };
 
   const loading = offeringLoading || teamsLoading;
@@ -262,7 +266,7 @@ export default function CourseProjects() {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
-                                    const projectUrl = getProjectUrl(team.name);
+                                    const projectUrl = getProjectUrl(team);
                                     window.open(
                                       projectUrl,
                                       '_blank',

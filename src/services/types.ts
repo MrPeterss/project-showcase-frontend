@@ -99,7 +99,11 @@ export type Project = {
   teamId: number
   deployedById: number
   status: string
+  githubUrl?: string
   containerId?: string
+  containerName?: string
+  imageName?: string
+  ports?: Record<string, unknown>
   gitHubLink: string
   deployedAt: string
   stoppedAt?: string

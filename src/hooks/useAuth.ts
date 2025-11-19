@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { onIdTokenChanged, signInWithPopup, signOut } from 'firebase/auth'
 import type { User as FirebaseUser } from 'firebase/auth'
 import { auth, googleProvider } from '@/lib/firebase'
@@ -6,6 +6,7 @@ import { services } from '@/services'
 import { api } from '@/lib/api'
 import { tokenManager } from '@/lib/tokenManager'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
+import { store, type AppDispatch } from '@/store'
 import {
   setUser,
   setLoading,
@@ -13,137 +14,146 @@ import {
   clearUser,
 } from '@/store/slices/userSlice'
 
+type FirebaseUserListener = (user: FirebaseUser | null) => void
+
+const firebaseUserListeners = new Set<FirebaseUserListener>()
+let firebaseUserSnapshot: FirebaseUser | null = auth.currentUser
+let authUnsubscribe: (() => void) | null = null
+let hasInitializedLoading = false
+let lastSyncedToken: string | null = null
+let syncInFlightToken: string | null = null
+let syncInFlightPromise: Promise<void> | null = null
+let profileFetchPromise: Promise<void> | null = null
+let lastProcessedTokenRefresh = store.getState().user.tokenRefreshTrigger
+
+const notifyFirebaseListeners = (user: FirebaseUser | null) => {
+  firebaseUserSnapshot = user
+  firebaseUserListeners.forEach((listener) => listener(user))
+}
+
+const subscribeToFirebaseUser = (listener: FirebaseUserListener) => {
+  listener(firebaseUserSnapshot)
+  firebaseUserListeners.add(listener)
+  return () => {
+    firebaseUserListeners.delete(listener)
+  }
+}
+
+const fetchUserProfile = async (dispatch: AppDispatch) => {
+  if (!profileFetchPromise) {
+    profileFetchPromise = (async () => {
+      const userResponse = await api.get('/users/me')
+      dispatch(setUser(userResponse.data))
+    })().finally(() => {
+      profileFetchPromise = null
+    })
+  }
+
+  await profileFetchPromise
+}
+
+const shouldSyncUser = (idToken: string) => {
+  const hasUser = store.getState().user.user !== null
+  const hasAccessToken = tokenManager.getToken() !== null
+  const tokenChanged = lastSyncedToken !== idToken
+  return tokenChanged || !hasUser || !hasAccessToken
+}
+
+const syncUserProfile = async (idToken: string, dispatch: AppDispatch) => {
+  localStorage.setItem('firebase_token', idToken)
+
+  if (!shouldSyncUser(idToken)) {
+    dispatch(setLoading(false))
+    return
+  }
+
+  if (syncInFlightPromise && syncInFlightToken === idToken) {
+    await syncInFlightPromise
+    return
+  }
+
+  syncInFlightToken = idToken
+  syncInFlightPromise = (async () => {
+    const response = await services.auth.verifyToken(idToken)
+    tokenManager.setToken(response.data.accessToken)
+    await fetchUserProfile(dispatch)
+    lastSyncedToken = idToken
+    dispatch(setLoading(false))
+  })().catch((error) => {
+    lastSyncedToken = null
+    throw error
+  }).finally(() => {
+    syncInFlightToken = null
+    syncInFlightPromise = null
+  })
+
+  await syncInFlightPromise
+}
+
+const handleSignedOut = (dispatch: AppDispatch) => {
+  localStorage.removeItem('firebase_token')
+  tokenManager.clearToken()
+  lastSyncedToken = null
+  dispatch(clearUser())
+  dispatch(setLoading(false))
+}
+
+const ensureAuthListener = (dispatch: AppDispatch) => {
+  if (authUnsubscribe) {
+    return
+  }
+
+  authUnsubscribe = onIdTokenChanged(auth, async (user) => {
+    notifyFirebaseListeners(user)
+
+    if (!hasInitializedLoading) {
+      dispatch(setLoading(true))
+      hasInitializedLoading = true
+    }
+
+    dispatch(setError(null))
+
+    if (user) {
+      try {
+        const idToken = await user.getIdToken()
+        await syncUserProfile(idToken, dispatch)
+      } catch (error) {
+        console.error('Error syncing user:', error)
+        dispatch(setError('Failed to sync user profile'))
+        dispatch(setLoading(false))
+      }
+    } else {
+      handleSignedOut(dispatch)
+    }
+  })
+}
+
+const refreshUserFromAccessToken = async (dispatch: AppDispatch) => {
+  try {
+    await fetchUserProfile(dispatch)
+  } catch (error) {
+    console.error('Error syncing user from refreshed token:', error)
+  }
+}
+
 export const useAuth = () => {
   const dispatch = useAppDispatch()
   const userState = useAppSelector((state) => state.user)
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(firebaseUserSnapshot)
 
-  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null)
-  const lastSyncedTokenRef = useRef<string | null>(null)
-
-  const syncUser = useCallback(async () => {
-    try {
-      const firebaseToken = localStorage.getItem('firebase_token')
-      if (!firebaseToken) {
-        throw new Error('No Firebase token available')
-      }
-      
-      // Verify token with backend to get access token
-      // The backend will set the refresh token cookie automatically
-      const response = await services.auth.verifyToken(firebaseToken)
-      const accessToken = response.data.accessToken
-      
-      // Store access token in memory
-      tokenManager.setToken(accessToken)
-      
-      // Get user information from /users/me endpoint
-      const userResponse = await api.get('/users/me')
-      dispatch(setUser(userResponse.data))
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to verify token'
-      dispatch(setError(errorMessage))
-      throw error
-    }
+  useEffect(() => {
+    ensureAuthListener(dispatch)
+    return subscribeToFirebaseUser(setFirebaseUser)
   }, [dispatch])
 
   useEffect(() => {
-    let isMounted = true
-    let hasInitialized = false
+    if (userState.tokenRefreshTrigger <= 0) return
+    if (lastSyncedToken === null) return
+    if (userState.tokenRefreshTrigger === lastProcessedTokenRefresh) return
 
-    const unsubscribe = onIdTokenChanged(auth, async (user) => {
-      if (!isMounted) return
-
-      setFirebaseUser(user)
-      
-      // Only set loading on first initialization (not on subsequent token changes)
-      if (!hasInitialized) {
-        dispatch(setLoading(true))
-        hasInitialized = true
-      }
-      dispatch(setError(null))
-
-      if (user) {
-        try {
-          const idToken = await user.getIdToken()
-          const storedToken = localStorage.getItem('firebase_token')
-          
-          // Check if token actually changed (not just on initial load)
-          const tokenChanged = storedToken !== null && storedToken !== idToken
-          
-          // Check current state - if we have user and token, and token hasn't changed, skip sync
-          const hasUser = userState.user !== null
-          const hasToken = tokenManager.getToken() !== null
-          const alreadySyncedThisToken = lastSyncedTokenRef.current === idToken
-          
-          // Only sync if:
-          // 1. Token changed (refresh), OR
-          // 2. We don't have a user in state yet (initial load or page reload), OR
-          // 3. We don't have an access token in memory (page reload - token lost)
-          // AND we haven't already synced with this exact token
-          const needsSync = (tokenChanged || !hasUser || !hasToken) && !alreadySyncedThisToken
-          
-          if (needsSync) {
-            localStorage.setItem('firebase_token', idToken)
-            lastSyncedTokenRef.current = idToken
-            await syncUser()
-          } else {
-            // Token is the same, user is loaded, and we have a token
-            // Just update the stored token in case it was updated by Firebase
-            localStorage.setItem('firebase_token', idToken)
-            if (isMounted && hasInitialized && hasUser) {
-              dispatch(setLoading(false))
-            }
-          }
-        } catch (error) {
-          console.error('Error syncing user:', error)
-          if (isMounted) {
-            dispatch(setError('Failed to sync user profile'))
-            dispatch(setLoading(false))
-          }
-        }
-      } else {
-        localStorage.removeItem('firebase_token')
-        lastSyncedTokenRef.current = null
-        // Clear access token from memory
-        tokenManager.clearToken()
-        dispatch(clearUser())
-        if (isMounted) {
-          dispatch(setLoading(false))
-        }
-      }
-    })
-
-    return () => {
-      isMounted = false
-      unsubscribe()
-    }
-  }, [dispatch, syncUser, userState.user])
-
-  const lastProcessedTriggerRef = useRef<number>(0)
-
-  // Also sync user when token is refreshed (e.g., from API interceptor)
-  useEffect(() => {
-    const handleTokenRefresh = async () => {
-      const accessToken = tokenManager.getToken()
-      // Only fetch user if we have a token and firebase user, and trigger has actually changed
-      if (accessToken && firebaseUser && userState.tokenRefreshTrigger > lastProcessedTriggerRef.current) {
-        try {
-          // Update the ref before making the call to prevent duplicate calls
-          lastProcessedTriggerRef.current = userState.tokenRefreshTrigger
-          // Get user information from /users/me endpoint
-          const userResponse = await api.get('/users/me')
-          dispatch(setUser(userResponse.data))
-        } catch (error) {
-          console.error('Error syncing user from refreshed token:', error)
-        }
-      }
-    }
-
-    // Watch for tokenRefreshTrigger changes (dispatched by API interceptor)
-    // Only run if tokenRefreshTrigger actually changed (not on initial mount)
-    if (userState.tokenRefreshTrigger > 0) {
-      handleTokenRefresh()
-    }
-  }, [firebaseUser, userState.tokenRefreshTrigger, dispatch])
+    lastProcessedTokenRefresh = userState.tokenRefreshTrigger
+    refreshUserFromAccessToken(dispatch)
+  }, [userState.tokenRefreshTrigger, dispatch])
 
   const signInWithGoogle = async () => {
     dispatch(setError(null))
@@ -163,7 +173,6 @@ export const useAuth = () => {
       // Clear access token from memory
       tokenManager.clearToken()
       await signOut(auth)
-      setFirebaseUser(null)
       dispatch(clearUser())
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Sign-out failed'
