@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { tokenManager } from '@/lib/tokenManager'
+import { createEventSource, closeEventSource } from '@/lib/streaming'
 import type { ParsedLogLine } from '@/services/projects'
 
 // Base API URL - matches api.ts
@@ -41,11 +42,11 @@ export function useStreamingBuildLogs(
     const url = `${API_BASE_URL}/projects/${projectId}/build-logs/stream`
     const eventSource = createEventSource(
       url,
-      (data) => {
+      (data: string) => {
         try {
           // Parse the incoming log line
-          const lines = data.split('\n').filter((line) => line.trim())
-          const newLogs: ParsedLogLine[] = lines.map((line) => {
+          const lines = data.split('\n').filter((line: string) => line.trim())
+          const newLogs: ParsedLogLine[] = lines.map((line: string) => {
             logIdCounterRef.current += 1
             const timestampMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)/)
             let timestamp = ''
@@ -79,7 +80,7 @@ export function useStreamingBuildLogs(
           console.error('Error parsing log data:', err)
         }
       },
-      (err) => {
+      (err: Event) => {
         console.error('EventSource error:', err)
         setError(new Error('Failed to stream build logs'))
         setIsStreaming(false)

@@ -1,6 +1,5 @@
 import { api, type ApiResponse } from '@/lib/api'
 import type { Project, CreateProjectData, UpdateProjectData } from './types'
-import type { ParsedLogLine } from './projects'
 
 export interface DeployProjectData {
   teamId: number

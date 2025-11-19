@@ -1,8 +1,5 @@
 import { tokenManager } from './tokenManager'
 
-// Base API URL - matches api.ts
-const API_BASE_URL = '/api'
-
 /**
  * Creates an EventSource connection for Server-Sent Events (SSE) streaming
  * Handles authentication by including the access token in the URL query params

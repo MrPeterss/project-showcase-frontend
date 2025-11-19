@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { services } from '@/services'
-import type { CreateProjectData, UpdateProjectData } from '@/services/types'
+import type { CreateProjectData, UpdateProjectData, Project } from '@/services/types'
 import type { DeployProjectData } from '@/services/projects'
 
 export const projectKeys = {
@@ -72,8 +72,24 @@ export const useContainers = () => {
 export const useDeployProject = (teamId: number) => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: Omit<DeployProjectData, 'teamId'>) =>
-      services.projects.deployStreaming({ ...data, teamId }),
+    mutationFn: (data: Omit<DeployProjectData, 'teamId'>): Promise<{ data: Project }> => {
+      return new Promise((resolve, reject) => {
+        services.projects.deployStreaming(
+          { ...data, teamId },
+          () => {
+            // Log callback - we can ignore logs here or handle them if needed
+          },
+          (project) => {
+            // Deployment complete - resolve with project wrapped in ApiResponse-like structure
+            resolve({ data: project })
+          },
+          (error) => {
+            // Deployment error
+            reject(error)
+          }
+        )
+      })
+    },
     onSuccess: (deployed) => {
       // Invalidate team projects list
       queryClient.invalidateQueries({ queryKey: projectKeys.listByTeam(teamId) })
