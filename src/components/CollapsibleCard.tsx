@@ -6,7 +6,8 @@ type CollapsibleCardProps = {
   title: string;
   icon?: ReactNode;
   defaultOpen?: boolean;
-  maxBodyHeightClass?: string; 
+  open?: boolean; // Controlled open state
+  maxBodyHeightClass?: string;
   onToggle?: (isOpen: boolean) => void;
   children: ReactNode;
 };
@@ -15,15 +16,21 @@ export function CollapsibleCard({
   title,
   icon,
   defaultOpen = false,
+  open: controlledOpen,
   maxBodyHeightClass,
   onToggle,
   children,
 }: CollapsibleCardProps) {
-  const [open, setOpen] = useState(defaultOpen);
-  
+  const [internalOpen, setInternalOpen] = useState(defaultOpen);
+
+  // Use controlled state if provided, otherwise use internal state
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+
   const handleToggle = () => {
     const newOpen = !open;
-    setOpen(newOpen);
+    if (controlledOpen === undefined) {
+      setInternalOpen(newOpen);
+    }
     onToggle?.(newOpen);
   };
 

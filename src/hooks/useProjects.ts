@@ -73,7 +73,7 @@ export const useDeployProject = (teamId: number) => {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (data: Omit<DeployProjectData, 'teamId'>) =>
-      services.projects.deploy({ ...data, teamId }),
+      services.projects.deployStreaming({ ...data, teamId }),
     onSuccess: (deployed) => {
       // Invalidate team projects list
       queryClient.invalidateQueries({ queryKey: projectKeys.listByTeam(teamId) })

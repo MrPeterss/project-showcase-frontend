@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import { Card } from '@/components/ui/card';
@@ -10,6 +10,9 @@ import {
   Wrench,
   AlertCircle,
   Loader2,
+  CheckCircle,
+  File,
+  X,
 } from 'lucide-react';
 import type { Team } from '@/services/types';
 import {
@@ -19,8 +22,13 @@ import {
   formatTimestamp,
   getStatusBadge,
 } from './shared';
-import { useProjectsByTeam, useDeployProject, useContainerLogs } from '@/hooks';
-import { parseLogs } from '@/services/projects';
+import {
+  useProjectsByTeam,
+  useStreamingDeploy,
+  useStreamingContainerLogs,
+} from '@/hooks';
+import { useQueryClient } from '@tanstack/react-query';
+import { projectKeys } from '@/hooks/useProjects';
 import type { ParsedLogLine } from '@/services/projects';
 
 interface DashboardMainSectionProps {
@@ -31,14 +39,39 @@ export default function DashboardMainSection({
   team,
 }: DashboardMainSectionProps) {
   const [githubUrl, setGithubUrl] = useState('');
+  const [dataFile, setDataFile] = useState<File | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isLogsCardOpen, setIsLogsCardOpen] = useState(false);
+  const [isBuildLogsOpen, setIsBuildLogsOpen] = useState(false);
+  const [deploymentSuccess, setDeploymentSuccess] = useState<string | null>(
+    null
+  );
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const buildLogsRef = useRef<HTMLDivElement | null>(null);
+  const containerLogsRef = useRef<HTMLDivElement | null>(null);
 
+  const queryClient = useQueryClient();
   const { data: projectsData, isLoading: projectsLoading } = useProjectsByTeam(
     team.id
   );
-  const deployProject = useDeployProject(team.id);
-  const isDeploying = deployProject.isPending;
+
+  // Use streaming deploy hook for build logs
+  const streamingDeploy = useStreamingDeploy(team.id, {
+    onComplete: (project) => {
+      // Invalidate queries when deployment completes
+      queryClient.invalidateQueries({
+        queryKey: projectKeys.listByTeam(team.id),
+      });
+      queryClient.setQueryData(projectKeys.detail(project.id), project);
+      queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
+    },
+  });
+
+  const isDeploying = streamingDeploy.isDeploying;
+  const streamStarted = streamingDeploy.streamStarted;
+  const buildLogs = streamingDeploy.buildLogs;
+  const isBuildLogsStreaming = streamingDeploy.isDeploying;
+  const buildLogsError = streamingDeploy.error;
 
   // Ensure projectsData is always an array
   // The API returns { projects: [...] } and the first entry is the latest deployment
@@ -74,21 +107,77 @@ export default function DashboardMainSection({
     }
   }, [githubUrl, latestProject]);
 
-  // Fetch logs for the latest project only when the logs card is open
-  // Request timestamps and last 200 lines
-  const { data: containerLogsResponse, isLoading: logsLoading } =
-    useContainerLogs(latestProject?.id, isLogsCardOpen && !!latestProject, {
+  // Clear success message when an error occurs
+  useEffect(() => {
+    if (streamingDeploy.error) {
+      setDeploymentSuccess(null);
+      // Clear timeout if error occurs
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+        successTimeoutRef.current = null;
+      }
+    }
+  }, [streamingDeploy.error]);
+
+  // Show success message when deployment completes
+  useEffect(() => {
+    if (streamingDeploy.deployedProject && !isDeploying) {
+      const project = streamingDeploy.deployedProject;
+      const hasFailedStatus =
+        project?.status?.toLowerCase() === 'failed' ||
+        project?.status?.toLowerCase() === 'error';
+
+      if (!hasFailedStatus) {
+        setDeploymentSuccess(
+          'Project deployed successfully! The build is in progress.'
+        );
+
+        // Auto-dismiss success message after 5 seconds
+        successTimeoutRef.current = setTimeout(() => {
+          setDeploymentSuccess(null);
+          successTimeoutRef.current = null;
+        }, 5000);
+      }
+    }
+  }, [streamingDeploy.deployedProject, isDeploying]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) {
+        clearTimeout(successTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Stream container logs when container logs card is open
+  const {
+    logs: containerLogs,
+    isStreaming: isContainerLogsStreaming,
+    error: containerLogsError,
+  } = useStreamingContainerLogs(
+    latestProject?.id,
+    isLogsCardOpen && !!latestProject,
+    {
       tail: 200,
       timestamps: true,
-    });
-
-  // Parse the logs string into individual log lines
-  const containerLogs = useMemo(() => {
-    if (!containerLogsResponse?.logs) {
-      return [];
     }
-    return parseLogs(containerLogsResponse.logs);
-  }, [containerLogsResponse]);
+  );
+
+  // Auto-scroll build logs to bottom when new logs arrive
+  useEffect(() => {
+    if (buildLogsRef.current && isBuildLogsOpen) {
+      buildLogsRef.current.scrollTop = buildLogsRef.current.scrollHeight;
+    }
+  }, [buildLogs, isBuildLogsOpen]);
+
+  // Auto-scroll container logs to bottom when new logs arrive
+  useEffect(() => {
+    if (containerLogsRef.current && isLogsCardOpen) {
+      containerLogsRef.current.scrollTop =
+        containerLogsRef.current.scrollHeight;
+    }
+  }, [containerLogs, isLogsCardOpen]);
 
   const handleDeploy = async () => {
     if (isDeploying) {
@@ -97,6 +186,14 @@ export default function DashboardMainSection({
 
     if (!githubUrl.trim()) {
       return;
+    }
+
+    // Clear any previous success/error messages when starting new deployment
+    setDeploymentSuccess(null);
+    // Clear any existing timeout
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+      successTimeoutRef.current = null;
     }
 
     // Basic GitHub URL validation
@@ -109,12 +206,32 @@ export default function DashboardMainSection({
       return;
     }
 
+    // Auto-open build logs when deployment starts
+    setIsBuildLogsOpen(true);
+
     try {
-      await deployProject.mutateAsync({ githubUrl: githubUrl.trim() });
+      await streamingDeploy.deploy({
+        githubUrl: githubUrl.trim(),
+        dataFile: dataFile || undefined,
+      });
+
+      // The streaming deploy hook handles the streaming and will call onComplete
+      // when deployment is done. We'll show success message when project is deployed.
+      // Check for deployed project in useEffect below
+
       setGithubUrl(''); // Clear input on success
+      setDataFile(null); // Clear file input on success
+      // Reset the file input element
+      const fileInput = document.getElementById(
+        'data-file-input'
+      ) as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = '';
+      }
     } catch (error) {
       console.error('Deployment failed:', error);
-      // Error will be handled by React Query's error state
+      setDeploymentSuccess(null); // Clear any success message on error
+      // Error will be handled by the streaming deploy hook
     }
   };
 
@@ -183,38 +300,87 @@ export default function DashboardMainSection({
                 </div>
               ) : null;
             })()}
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={githubUrl}
-                onChange={(e) => setGithubUrl(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="add a GitHub url here..."
-                className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={isDeploying}
-              />
-              <Button
-                onClick={handleDeploy}
-                disabled={isDeploying || !githubUrl.trim()}
-                className="bg-black hover:bg-gray-800 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                aria-busy={isDeploying}
-              >
-                {isDeploying ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Deploying...</span>
-                  </>
-                ) : (
-                  'Deploy'
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={githubUrl}
+                  onChange={(e) => setGithubUrl(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="add a GitHub url here..."
+                  className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  disabled={isDeploying}
+                />
+                <Button
+                  onClick={handleDeploy}
+                  disabled={isDeploying || !githubUrl.trim()}
+                  className="bg-black hover:bg-gray-800 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  aria-busy={isDeploying}
+                >
+                  {isDeploying ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Deploying...</span>
+                    </>
+                  ) : (
+                    'Deploy'
+                  )}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <File className="h-4 w-4 text-gray-600" />
+                <span className="text-sm text-gray-600">
+                  Data File (optional):
+                </span>
+                <label
+                  htmlFor="data-file-input"
+                  className="text-sm text-blue-600 hover:underline cursor-pointer"
+                >
+                  {dataFile ? dataFile.name : 'Choose file...'}
+                </label>
+                <input
+                  type="file"
+                  id="data-file-input"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setDataFile(file);
+                  }}
+                  className="hidden"
+                  disabled={isDeploying}
+                />
+                {dataFile && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDataFile(null);
+                      // Reset the file input
+                      const fileInput = document.getElementById(
+                        'data-file-input'
+                      ) as HTMLInputElement;
+                      if (fileInput) {
+                        fileInput.value = '';
+                      }
+                    }}
+                    className="text-gray-400 hover:text-gray-600 p-1"
+                    disabled={isDeploying}
+                    aria-label="Remove file"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 )}
-              </Button>
+              </div>
             </div>
-            {deployProject.error && (
+            {deploymentSuccess && (
+              <div className="flex items-center gap-2 text-green-600 text-sm">
+                <CheckCircle className="h-4 w-4" />
+                <span>{deploymentSuccess}</span>
+              </div>
+            )}
+            {streamingDeploy.error && (
               <div className="flex items-center gap-2 text-red-600 text-sm">
                 <AlertCircle className="h-4 w-4" />
                 <span>
-                  {(deployProject.error as any)?.response?.data?.message ||
-                    (deployProject.error as any)?.message ||
+                  {streamingDeploy.error.message ||
                     'Deployment failed. Please try again.'}
                 </span>
               </div>
@@ -226,12 +392,64 @@ export default function DashboardMainSection({
         <CollapsibleCard
           title="Build Logs"
           icon={<Wrench className="h-5 w-5" />}
-          defaultOpen={false}
+          open={isBuildLogsOpen}
+          onToggle={setIsBuildLogsOpen}
           maxBodyHeightClass="max-h-80"
         >
-          <div className="font-mono text-sm text-gray-600">
-            No recent builds.
-          </div>
+          {isBuildLogsStreaming && !streamStarted ? (
+            <div className="font-mono text-sm text-gray-600 p-4">
+              <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
+              Connecting to build logs stream...
+            </div>
+          ) : isBuildLogsStreaming &&
+            streamStarted &&
+            buildLogs.length === 0 ? (
+            <div className="font-mono text-sm text-gray-600 p-4">
+              <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
+              Waiting for build to start...
+            </div>
+          ) : buildLogsError ? (
+            <div className="font-mono text-sm text-red-600 p-4">
+              <AlertCircle className="h-4 w-4 inline-block mr-2" />
+              Error streaming build logs: {buildLogsError.message}
+            </div>
+          ) : buildLogs.length === 0 ? (
+            <div className="font-mono text-sm text-gray-600 p-4">
+              No build logs available yet. Deploy a project to see build logs.
+            </div>
+          ) : (
+            <div
+              ref={buildLogsRef}
+              className="bg-black text-green-400 p-4 rounded font-mono text-xs overflow-y-auto max-h-80 text-left"
+            >
+              {buildLogs.map((log: ParsedLogLine) => (
+                <div key={log.id} className="mb-1 text-left">
+                  {log.timestamp && (
+                    <span className="text-gray-500">
+                      [{formatTimestamp(log.timestamp)}]
+                    </span>
+                  )}
+                  <span
+                    className={`${log.timestamp ? 'ml-2' : ''} ${
+                      log.level === 'ERROR'
+                        ? 'text-red-400'
+                        : log.level === 'WARN'
+                        ? 'text-yellow-400'
+                        : 'text-green-400'
+                    }`}
+                  >
+                    {log.message}
+                  </span>
+                </div>
+              ))}
+              {isBuildLogsStreaming && (
+                <div className="text-gray-500 mt-2">
+                  <Loader2 className="h-3 w-3 animate-spin inline-block mr-1" />
+                  Streaming...
+                </div>
+              )}
+            </div>
+          )}
         </CollapsibleCard>
 
         {/* Container Logs (collapsible) */}
@@ -242,9 +460,15 @@ export default function DashboardMainSection({
           maxBodyHeightClass="max-h-80"
           onToggle={setIsLogsCardOpen}
         >
-          {logsLoading ? (
+          {isContainerLogsStreaming && containerLogs.length === 0 ? (
             <div className="font-mono text-sm text-gray-600 p-4">
-              Loading logs...
+              <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
+              Connecting to container logs stream...
+            </div>
+          ) : containerLogsError ? (
+            <div className="font-mono text-sm text-red-600 p-4">
+              <AlertCircle className="h-4 w-4 inline-block mr-2" />
+              Error streaming container logs: {containerLogsError.message}
             </div>
           ) : containerLogs.length === 0 ? (
             <div className="font-mono text-sm text-gray-600 p-4">
@@ -253,7 +477,10 @@ export default function DashboardMainSection({
                 : 'Deploy a project to see container logs.'}
             </div>
           ) : (
-            <div className="bg-black text-green-400 p-4 rounded font-mono text-xs overflow-y-auto max-h-80 text-left">
+            <div
+              ref={containerLogsRef}
+              className="bg-black text-green-400 p-4 rounded font-mono text-xs overflow-y-auto max-h-80 text-left"
+            >
               {containerLogs.map((log: ParsedLogLine) => (
                 <div key={log.id} className="mb-1 text-left">
                   {log.timestamp && (
@@ -261,26 +488,25 @@ export default function DashboardMainSection({
                       [{formatTimestamp(log.timestamp)}]
                     </span>
                   )}
-                  {log.level && (
-                    <span
-                      className={`ml-2 ${
-                        log.level === 'ERROR'
-                          ? 'text-red-400'
-                          : log.level === 'WARN'
-                          ? 'text-yellow-400'
-                          : 'text-green-400'
-                      }`}
-                    >
-                      {log.level}:
-                    </span>
-                  )}
                   <span
-                    className={log.level ? 'ml-1' : log.timestamp ? 'ml-2' : ''}
+                    className={`${log.timestamp ? 'ml-2' : ''} ${
+                      log.level === 'ERROR'
+                        ? 'text-red-400'
+                        : log.level === 'WARN'
+                        ? 'text-yellow-400'
+                        : 'text-green-400'
+                    }`}
                   >
                     {log.message}
                   </span>
                 </div>
               ))}
+              {isContainerLogsStreaming && (
+                <div className="text-gray-500 mt-2">
+                  <Loader2 className="h-3 w-3 animate-spin inline-block mr-1" />
+                  Streaming...
+                </div>
+              )}
             </div>
           )}
         </CollapsibleCard>

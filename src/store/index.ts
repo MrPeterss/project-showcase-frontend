@@ -4,6 +4,7 @@ import coursesReducer from './slices/coursesSlice'
 import courseOfferingsReducer from './slices/courseOfferingsSlice'
 import semestersReducer from './slices/semestersSlice'
 import teamsReducer from './slices/teamsSlice'
+import deploymentLogsReducer from './slices/deploymentLogsSlice'
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +13,7 @@ export const store = configureStore({
     courseOfferings: courseOfferingsReducer,
     semesters: semestersReducer,
     teams: teamsReducer,
+    deploymentLogs: deploymentLogsReducer,
   }
 })
 

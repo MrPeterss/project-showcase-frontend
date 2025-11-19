@@ -21,6 +21,7 @@ import CourseDashboard from './pages/CourseDashboard';
 import CourseTeamDashboard from './pages/CourseTeamDashboard';
 import CourseSettings from './pages/CourseSettings';
 import Dashboard from './pages/Dashboard';
+import ProjectNotFound from './pages/ProjectNotFound';
 import LoginCard from './components/LoginCard';
 
 function AppContent() {
@@ -29,7 +30,8 @@ function AppContent() {
     location.pathname !== '/login' &&
     location.pathname !== '/courses' &&
     !location.pathname.startsWith('/courses/') &&
-    !location.pathname.startsWith('/dashboard/');
+    !location.pathname.startsWith('/dashboard/') &&
+    !location.pathname.startsWith('/not-found/');
 
   return (
     <div className="min-h-svh">
@@ -47,6 +49,7 @@ function AppContent() {
             <Route path="settings" element={<CourseSettings />} />
           </Route>
           <Route path="/dashboard/:teamId" element={<Dashboard />} />
+          <Route path="/not-found/:team_name" element={<ProjectNotFound />} />
           <Route path="/login" element={<LoginCard />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
         </Routes>
