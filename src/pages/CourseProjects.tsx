@@ -4,9 +4,20 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useCourseContext } from '@/components/CourseLayout';
 import { useAuth } from '@/hooks/useAuth';
-import { ArrowLeft, Plus, ExternalLink, Pencil, LayoutDashboard } from 'lucide-react';
+import {
+  ArrowLeft,
+  Plus,
+  ExternalLink,
+  Pencil,
+  Github,
+  Trash2,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useTeamsByOffering, useMyTeamsByOffering } from '@/hooks/useTeams';
+import {
+  useTeamsByOffering,
+  useMyTeamsByOffering,
+  useDeleteTeam,
+} from '@/hooks/useTeams';
 import { useDashboardTabs } from '@/context/DashboardTabsContext';
 import { NewTeamModal, EditTeamModal } from '@/components/modals';
 import type { Team } from '@/services/types';
@@ -45,6 +56,8 @@ export default function CourseProjects() {
     const n = parseInt(courseId, 10);
     return isNaN(n) ? undefined : n;
   }, [courseId]);
+
+  const deleteTeam = useDeleteTeam(offeringId);
 
   // Get user's teams to check if admin is viewing a team they're not part of
   const { data: myTeams } = useMyTeamsByOffering(
@@ -101,8 +114,10 @@ export default function CourseProjects() {
   // Generate project URL for a team
   const getProjectUrl = (team: Team) => {
     // Prefer container name from the latest project when available
-    const latestProject = team.projects && team.projects.length > 0 ? team.projects[0] : null;
-    const rawName = latestProject?.containerName?.replace(/^\//, '') || team.name;
+    const latestProject =
+      team.projects && team.projects.length > 0 ? team.projects[0] : null;
+    const rawName =
+      latestProject?.containerName?.replace(/^\//, '') || team.name;
 
     // Format: {container-name}.{site_URL}
     // Remove slashes/spaces and convert to lowercase for URL
@@ -203,32 +218,99 @@ export default function CourseProjects() {
                         <th className="text-left p-3 font-semibold">
                           Last Updated
                         </th>
-                        {isAdmin && (
-                          <th className="text-left p-3 font-semibold">
-                            Dashboard
-                          </th>
-                        )}
-                        <th className={`p-3 font-semibold ${canManage ? 'text-left' : 'text-right'}`}>
+                        <th
+                          className={`p-3 font-semibold ${
+                            canManage ? 'text-left' : 'text-right'
+                          }`}
+                        >
                           Project Link
                         </th>
-                        {canManage && (
-                          <th className="text-right p-3 font-semibold">
-                            Actions
-                          </th>
-                        )}
                       </tr>
                     </thead>
                     <tbody>
                       {teams.map((team) => {
                         // Get the most recent deployment date
-                        const lastDeployed = team.projects && team.projects.length > 0
-                          ? team.projects[0].deployedAt
+                        const latestProject =
+                          team.projects && team.projects.length > 0
+                            ? team.projects[0]
+                            : null;
+                        const lastDeployed = latestProject?.deployedAt || null;
+                        const githubUrl = latestProject
+                          ? (latestProject as any).githubUrl ||
+                            latestProject.gitHubLink
                           : null;
+                        const isDeployed = lastDeployed !== null;
+
+                        const handleTeamNameClick = () => {
+                          // If admin is viewing a team they're not part of, add it as a tab first
+                          if (
+                            isAdmin &&
+                            myTeams &&
+                            !myTeams.some((t: Team) => t.id === team.id)
+                          ) {
+                            addTab(team.id, team.name);
+                          }
+                          // Then navigate
+                          navigate(`/courses/${courseId}/dashboard/${team.id}`);
+                        };
+
+                        const handleDelete = async () => {
+                          if (
+                            window.confirm(
+                              `Are you sure you want to delete the team "${team.name}"? This action cannot be undone.`
+                            )
+                          ) {
+                            try {
+                              await deleteTeam.mutateAsync(team.id);
+                            } catch (error) {
+                              console.error('Error deleting team:', error);
+                              alert('Failed to delete team. Please try again.');
+                            }
+                          }
+                        };
 
                         return (
-                          <tr key={team.id} className="border-b hover:bg-gray-50">
-                            <td className="text-left p-3 font-medium">
-                              {team.name}
+                          <tr
+                            key={team.id}
+                            className="border-b hover:bg-gray-50"
+                          >
+                            <td className="text-left p-3">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={handleTeamNameClick}
+                                  className="font-medium text-left hover:text-blue-600 hover:underline cursor-pointer transition-colors"
+                                >
+                                  {team.name}
+                                </button>
+                                {canManage && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingTeam(team);
+                                        setIsEditTeamModalOpen(true);
+                                      }}
+                                      className="h-7 w-7 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDelete();
+                                      }}
+                                      disabled={deleteTeam.isPending}
+                                      className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </td>
                             <td className="text-left p-3">
                               <Badge variant="outline">
@@ -240,28 +322,16 @@ export default function CourseProjects() {
                                 ? new Date(lastDeployed).toLocaleString()
                                 : 'Not deployed'}
                             </td>
-                            {isAdmin && (
-                              <td className="text-left p-3">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    // If admin is viewing a team they're not part of, add it as a tab first
-                                    if (myTeams && !myTeams.some((t: Team) => t.id === team.id)) {
-                                      addTab(team.id, team.name);
-                                    }
-                                    // Then navigate
-                                    navigate(`/courses/${courseId}/dashboard/${team.id}`);
-                                  }}
-                                  className="flex items-center gap-2"
-                                >
-                                  <LayoutDashboard className="h-4 w-4" />
-                                  View Dashboard
-                                </Button>
-                              </td>
-                            )}
-                            <td className={`p-3 ${canManage ? 'text-left' : 'text-right'}`}>
-                              <div className={canManage ? '' : 'flex justify-end'}>
+                            <td
+                              className={`p-3 ${
+                                canManage ? 'text-left' : 'text-right'
+                              }`}
+                            >
+                              <div
+                                className={`flex items-center gap-2 ${
+                                  canManage ? '' : 'justify-end'
+                                }`}
+                              >
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -273,28 +343,31 @@ export default function CourseProjects() {
                                       'noopener,noreferrer'
                                     );
                                   }}
+                                  disabled={!isDeployed}
                                   className="flex items-center gap-2"
                                 >
                                   <ExternalLink className="h-4 w-4" />
                                   Open Project
                                 </Button>
+                                {isDeployed && githubUrl && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      window.open(
+                                        githubUrl,
+                                        '_blank',
+                                        'noopener,noreferrer'
+                                      );
+                                    }}
+                                    className="flex items-center gap-2"
+                                  >
+                                    <Github className="h-4 w-4" />
+                                    GitHub
+                                  </Button>
+                                )}
                               </div>
                             </td>
-                            {canManage && (
-                              <td className="text-right p-3">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setEditingTeam(team);
-                                    setIsEditTeamModalOpen(true);
-                                  }}
-                                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              </td>
-                            )}
                           </tr>
                         );
                       })}
