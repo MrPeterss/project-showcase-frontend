@@ -19,6 +19,8 @@ import {
   CheckCircle,
   File,
   X,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import type { Team } from '@/services/types';
 import {
@@ -381,6 +383,32 @@ export default function DashboardMainSection({
           <div className="flex items-center gap-3">
             {getStatusBadge(projectStatus)}
             <h1 className="text-3xl font-bold text-gray-900">{team.name}</h1>
+            {(() => {
+              // Get project URL using the same method as CourseProjects page
+              const siteUrl = import.meta.env.VITE_SITE_URL || window.location.hostname;
+              const rawName =
+                latestProject?.containerName?.replace(/^\//, '') || team.name;
+              
+              // Format: {container-name}.{site_URL}
+              // Remove slashes/spaces and convert to lowercase for URL
+              const sanitizedName = rawName.toLowerCase().replace(/[^a-z0-9-]/g, '');
+              const projectUrl = `https://${sanitizedName}.${siteUrl}`;
+              
+              return (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    window.open(projectUrl, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="flex items-center gap-2 ml-auto"
+                >
+                  <Globe className="h-4 w-4" />
+                  <span>Open Project</span>
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
+              );
+            })()}
           </div>
           <div className="space-y-2">
             {(() => {
