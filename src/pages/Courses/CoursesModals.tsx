@@ -93,8 +93,6 @@ export function CoursesModals({
         }}
         onNewCourseClick={onNewCourseClick}
         onNewSemesterClick={onNewSemesterClick}
-        onEditCourseClick={onEditCourseClick}
-        onEditSemesterClick={onEditSemesterClick}
       />
 
       <EditCourseModal

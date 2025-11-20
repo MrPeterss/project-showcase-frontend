@@ -3,7 +3,6 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setSelectedSemesterId } from '@/store/slices/coursesSlice';
 import {
   fetchCourseOfferings,
-  deleteCourseOffering,
 } from '@/store/thunks/courseOfferingsThunks';
 import { fetchSemesters } from '@/store/thunks/semestersThunks';
 import { selectSelectedSemesterId, selectAllCourses } from '@/store/selectors/coursesSelectors';
@@ -11,13 +10,12 @@ import {
   selectCourseOfferingsBySelectedSemester,
   selectCourseOfferingsError,
   selectCourseOfferingsLoading,
-  selectIsDeletingCourseOffering,
 } from '@/store/selectors/courseOfferingsSelectors';
 import { selectAllSemesters } from '@/store/selectors/semestersSelectors';
 import { selectIsLoading, selectUser } from '@/store/selectors/userSelectors';
 import { useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import type { CourseOffering, Semester } from '@/services';
+import type { Semester, Course } from '@/services';
 import { CoursesHeader } from './CoursesHeader';
 import { SemesterSelector } from './SemesterSelector';
 import { CourseOfferingsList } from './CourseOfferingsList';
@@ -33,7 +31,6 @@ export default function Courses() {
   const offerings = useAppSelector(selectCourseOfferingsBySelectedSemester);
   const offeringsLoading = useAppSelector(selectCourseOfferingsLoading);
   const offeringsError = useAppSelector(selectCourseOfferingsError);
-  const isDeletingOffering = useAppSelector(selectIsDeletingCourseOffering);
   const selectedSemesterId = useAppSelector(selectSelectedSemesterId);
   const semesters = useAppSelector(selectAllSemesters);
   const courses = useAppSelector(selectAllCourses);
@@ -49,7 +46,7 @@ export default function Courses() {
   const [selectedSemester, setSelectedSemester] = useState<Semester | null>(
     null
   );
-  const [selectedCourse, setSelectedCourse] = useState<{ id: number } | null>(null);
+  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
 
   // Wait for user to load before showing admin controls
   const isAdmin = user?.role === 'ADMIN';
@@ -66,16 +63,6 @@ export default function Courses() {
   // Handle semester selection change
   const handleSemesterChange = (semesterId: string) => {
     dispatch(setSelectedSemesterId(semesterId));
-  };
-
-  // Handle course offering deletion
-  const handleDeleteOffering = async (offeringId: number) => {
-    try {
-      await dispatch(deleteCourseOffering(offeringId)).unwrap();
-      await dispatch(fetchCourseOfferings(undefined));
-    } catch (error) {
-      console.error('Failed to delete course offering:', error);
-    }
   };
 
   // Modal handlers
