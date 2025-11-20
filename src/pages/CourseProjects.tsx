@@ -241,6 +241,14 @@ export default function CourseProjects() {
                         const isDeployed = lastDeployed !== null;
 
                         const handleTeamNameClick = () => {
+                          // Check if user is a member of this team
+                          const isTeamMember = myTeams?.some((t: Team) => t.id === team.id) ?? false;
+                          
+                          // Students can only access their own teams
+                          if (!canManage && !isTeamMember) {
+                            return;
+                          }
+                          
                           // If admin or instructor is viewing a team they're not part of, add it as a tab first
                           if (
                             canManage &&
@@ -275,12 +283,23 @@ export default function CourseProjects() {
                           >
                             <td className="text-left p-3">
                               <div className="flex items-center gap-2">
-                                <button
-                                  onClick={handleTeamNameClick}
-                                  className="font-medium text-left hover:text-blue-600 hover:underline cursor-pointer transition-colors"
-                                >
-                                  {team.name}
-                                </button>
+                                {(() => {
+                                  const isTeamMember = myTeams?.some((t: Team) => t.id === team.id) ?? false;
+                                  const canAccess = canManage || isTeamMember;
+                                  
+                                  return canAccess ? (
+                                    <button
+                                      onClick={handleTeamNameClick}
+                                      className="font-medium text-left hover:text-blue-600 hover:underline cursor-pointer transition-colors"
+                                    >
+                                      {team.name}
+                                    </button>
+                                  ) : (
+                                    <span className="font-medium text-gray-700">
+                                      {team.name}
+                                    </span>
+                                  );
+                                })()}
                                 {canManage && (
                                   <>
                                     <Button

@@ -7,7 +7,10 @@ import DashboardMainSection from './Dashboard/DashboardMainSection';
 import DashboardSideBarSection from './Dashboard/DashboardSideBarSection';
 
 export default function CourseTeamDashboard() {
-  const { teamId, courseId } = useParams<{ teamId: string; courseId: string }>();
+  const { teamId, courseId } = useParams<{
+    teamId: string;
+    courseId: string;
+  }>();
   const location = useLocation();
   const { user } = useAuth();
   const { addTab, openTabs } = useDashboardTabs();
@@ -32,16 +35,21 @@ export default function CourseTeamDashboard() {
     offeringId && user ? offeringId : undefined
   );
 
+  // Check if user can manage (instructor or admin)
+  const canManage = user?.role === 'ADMIN' || user?.role === 'INSTRUCTOR';
+
+  // Check if user is a member of this team
+  const isTeamMember = myTeams?.some((t) => t.id === teamIdNum) ?? false;
+
   useEffect(() => {
     const expectedPath = `/courses/${courseId}/dashboard/${teamIdNum}`;
     const isOnCorrectRoute = location.pathname === expectedPath;
-    
+
     if (isUnmountingRef.current || !isOnCorrectRoute) {
       return;
     }
-    
+
     // Check if user can manage (instructor or admin) and is viewing a team they're not part of
-    const canManage = user?.role === 'ADMIN' || user?.role === 'INSTRUCTOR';
     if (
       canManage &&
       team &&
@@ -54,11 +62,21 @@ export default function CourseTeamDashboard() {
         addTab(teamIdNum, team.name);
       }
     }
-    
+
     return () => {
       isUnmountingRef.current = true;
     };
-  }, [user?.role, team, teamIdNum, myTeams, addTab, openTabs, location.pathname, courseId]);
+  }, [
+    user?.role,
+    team,
+    teamIdNum,
+    myTeams,
+    addTab,
+    openTabs,
+    location.pathname,
+    courseId,
+    canManage,
+  ]);
 
   if (loading) {
     return (
@@ -82,6 +100,19 @@ export default function CourseTeamDashboard() {
     );
   }
 
+  // Authorization check: Students and Viewers can only access their own teams
+  if (!canManage && !isTeamMember) {
+    return (
+      <div className="flex flex-1 bg-gray-50 items-center justify-center">
+        <div className="text-center">
+          <div className="text-lg text-red-600">
+            You don't have access to this team's dashboard.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-1 bg-gray-50 min-h-0 overflow-hidden">
       <DashboardMainSection team={team} />
@@ -89,4 +120,3 @@ export default function CourseTeamDashboard() {
     </div>
   );
 }
-
