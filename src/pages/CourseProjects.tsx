@@ -81,7 +81,6 @@ export default function CourseProjects() {
   );
 
   const canManage = effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN';
-  const isAdmin = user?.role === 'ADMIN' && effectiveRole === 'ADMIN';
 
   useEffect(() => {
     if (!offeringId) return;
@@ -242,9 +241,9 @@ export default function CourseProjects() {
                         const isDeployed = lastDeployed !== null;
 
                         const handleTeamNameClick = () => {
-                          // If admin is viewing a team they're not part of, add it as a tab first
+                          // If admin or instructor is viewing a team they're not part of, add it as a tab first
                           if (
-                            isAdmin &&
+                            canManage &&
                             myTeams &&
                             !myTeams.some((t: Team) => t.id === team.id)
                           ) {

@@ -12,9 +12,6 @@ interface CourseOfferingsListProps {
   isLoading: boolean;
   error: string | null;
   isAdmin: boolean;
-  onEdit: (offering: CourseOffering) => void;
-  onDelete: (offeringId: number) => void;
-  isDeleting: boolean;
   onAddCourse: () => void;
 }
 
@@ -25,9 +22,6 @@ export function CourseOfferingsList({
   isLoading,
   error,
   isAdmin,
-  onEdit,
-  onDelete,
-  isDeleting,
   onAddCourse,
 }: CourseOfferingsListProps) {
   if (isLoading) {
@@ -104,18 +98,12 @@ export function CourseOfferingsList({
           <CourseOfferingsGrid
             offerings={offerings}
             isAdmin={isAdmin}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            isDeleting={isDeleting}
           />
         ) : semesters ? (
           <CourseOfferingsBySemester
             offerings={offerings}
             semesters={semesters}
             isAdmin={isAdmin}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            isDeleting={isDeleting}
           />
         ) : null}
       </CardContent>

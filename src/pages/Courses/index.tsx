@@ -6,7 +6,7 @@ import {
   deleteCourseOffering,
 } from '@/store/thunks/courseOfferingsThunks';
 import { fetchSemesters } from '@/store/thunks/semestersThunks';
-import { selectSelectedSemesterId } from '@/store/selectors/coursesSelectors';
+import { selectSelectedSemesterId, selectAllCourses } from '@/store/selectors/coursesSelectors';
 import {
   selectCourseOfferingsBySelectedSemester,
   selectCourseOfferingsError,
@@ -36,6 +36,7 @@ export default function Courses() {
   const isDeletingOffering = useAppSelector(selectIsDeletingCourseOffering);
   const selectedSemesterId = useAppSelector(selectSelectedSemesterId);
   const semesters = useAppSelector(selectAllSemesters);
+  const courses = useAppSelector(selectAllCourses);
   const user = useAppSelector(selectUser);
 
   // Modal state
@@ -48,8 +49,7 @@ export default function Courses() {
   const [selectedSemester, setSelectedSemester] = useState<Semester | null>(
     null
   );
-  const [selectedOffering, setSelectedOffering] =
-    useState<CourseOffering | null>(null);
+  const [selectedCourse, setSelectedCourse] = useState<{ id: number } | null>(null);
 
   // Wait for user to load before showing admin controls
   const isAdmin = user?.role === 'ADMIN';
@@ -84,9 +84,20 @@ export default function Courses() {
     setIsEditSemesterModalOpen(true);
   };
 
-  const handleEditCourse = (offering: CourseOffering) => {
-    setSelectedOffering(offering);
-    setIsEditCourseModalOpen(true);
+  const handleEditCourse = (courseId: number) => {
+    const course = courses.find(c => c.id === courseId);
+    if (course) {
+      setSelectedCourse(course);
+      setIsEditCourseModalOpen(true);
+    }
+  };
+
+  const handleEditSemesterFromOffering = (semesterId: number) => {
+    const semester = semesters.find(s => s.id === semesterId);
+    if (semester) {
+      setSelectedSemester(semester);
+      setIsEditSemesterModalOpen(true);
+    }
   };
 
   const handleCloseModals = () => {
@@ -96,7 +107,7 @@ export default function Courses() {
     setIsNewCourseOfferingModalOpen(false);
     setIsEditCourseModalOpen(false);
     setSelectedSemester(null);
-    setSelectedOffering(null);
+    setSelectedCourse(null);
   };
 
   // Show loading state while checking authentication
@@ -147,9 +158,6 @@ export default function Courses() {
         isLoading={offeringsLoading}
         error={offeringsError}
         isAdmin={isAdmin}
-        onEdit={handleEditCourse}
-        onDelete={handleDeleteOffering}
-        isDeleting={isDeletingOffering}
         onAddCourse={() => setIsNewCourseOfferingModalOpen(true)}
       />
 
@@ -161,7 +169,7 @@ export default function Courses() {
         isNewCourseOfferingModalOpen={isNewCourseOfferingModalOpen}
         isEditCourseModalOpen={isEditCourseModalOpen}
         selectedSemester={selectedSemester}
-        selectedOffering={selectedOffering}
+        selectedCourse={selectedCourse}
         onCloseNewSemester={() => setIsNewSemesterModalOpen(false)}
         onCloseEditSemester={handleCloseModals}
         onCloseNewCourse={() => setIsNewCourseModalOpen(false)}
@@ -169,6 +177,8 @@ export default function Courses() {
         onCloseEditCourse={handleCloseModals}
         onNewCourseClick={() => setIsNewCourseModalOpen(true)}
         onNewSemesterClick={() => setIsNewSemesterModalOpen(true)}
+        onEditCourseClick={handleEditCourse}
+        onEditSemesterClick={handleEditSemesterFromOffering}
       />
     </div>
   );

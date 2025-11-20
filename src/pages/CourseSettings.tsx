@@ -7,7 +7,7 @@ import { useCourseContext } from '@/components/CourseLayout';
 import { ArrowLeft, Upload, Users, Lock, Eye, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { services } from '@/services';
-import { useUpdateCourseOffering } from '@/hooks/useCourseOfferings';
+import { useUpdateCourseOffering, useDeleteCourseOffering } from '@/hooks/useCourseOfferings';
 import {
   useEnrollmentsByOffering,
   useCreateEnrollments,
@@ -33,6 +33,7 @@ export default function CourseSettings() {
   const updateCourseOffering = useUpdateCourseOffering();
   const createEnrollments = useCreateEnrollments();
   const deleteEnrollment = useDeleteEnrollment();
+  const deleteCourseOffering = useDeleteCourseOffering();
   const { data: allOfferings } = useCourseOfferings();
 
   // Get enrollments using React Query
@@ -103,6 +104,24 @@ export default function CourseSettings() {
       navigate(`/courses/${courseId}`, { replace: true });
     }
   }, [effectiveRole, courseId, navigate]);
+
+  const handleDeleteCourseOffering = async () => {
+    if (!offering || !offeringId) return;
+    
+    const confirmed = window.confirm(
+      'Are you sure you want to delete this course offering? This action cannot be undone.'
+    );
+    
+    if (!confirmed) return;
+
+    try {
+      await deleteCourseOffering.mutateAsync(offering.id);
+      navigate('/courses', { replace: true });
+    } catch (error) {
+      console.error('Error deleting course offering:', error);
+      // TODO: Show error message to user
+    }
+  };
 
   // Handler functions
   const parseStudentInput = (input: string) => {
@@ -631,6 +650,37 @@ export default function CourseSettings() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Delete Course Offering Section - Admin Only */}
+          {user?.role === 'ADMIN' && (
+            <Card className="border-red-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-red-700">
+                  <Trash2 className="h-5 w-5" />
+                  Danger Zone
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-medium text-left mb-2">Delete Course Offering</h4>
+                    <p className="text-sm text-muted-foreground text-left mb-4">
+                      Permanently delete this course offering. This action cannot be undone and will remove all associated data including enrollments, teams, and projects.
+                    </p>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeleteCourseOffering}
+                      disabled={deleteCourseOffering.isPending}
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {deleteCourseOffering.isPending ? 'Deleting...' : 'Delete Course Offering'}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
     </div>

@@ -7,18 +7,12 @@ interface CourseOfferingsBySemesterProps {
   offerings: CourseOffering[];
   semesters: Semester[];
   isAdmin: boolean;
-  onEdit: (offering: CourseOffering) => void;
-  onDelete: (offeringId: number) => void;
-  isDeleting: boolean;
 }
 
 export function CourseOfferingsBySemester({
   offerings,
   semesters,
   isAdmin,
-  onEdit,
-  onDelete,
-  isDeleting,
 }: CourseOfferingsBySemesterProps) {
   // Group courses by semester
   const offeringsBySemester = offerings.reduce(
@@ -79,9 +73,6 @@ export function CourseOfferingsBySemester({
                 key={offering.id}
                 offering={offering}
                 isAdmin={isAdmin}
-                onEdit={onEdit}
-                onDelete={onDelete}
-                isDeleting={isDeleting}
               />
             ))}
           </div>

@@ -329,6 +329,16 @@ export const projectServices = {
   deployLegacy: (data: DeployProjectData): Promise<ApiResponse<Project>> =>
     api.post('/projects/deploy-legacy', data, { timeout: 0 }), // no timeout
 
+  // Build old project with JSON (admin only)
+  // Takes github link and team id, doesn't use form data or stream
+  buildOldJson: (data: { githubUrl: string; teamId: number }): Promise<ApiResponse<Project>> =>
+    api.post('/projects/build-old-json', data, { timeout: 0 }), // no timeout
+
+  // Build old project with SQL (admin only)
+  // Takes github link and team id, doesn't use form data or stream
+  buildOldSql: (data: { githubUrl: string; teamId: number }): Promise<ApiResponse<Project>> =>
+    api.post('/projects/build-old-sql', data, { timeout: 0 }), // no timeout
+
   // Get project by ID
   getById: (projectId: number): Promise<ApiResponse<Project>> =>
     api.get(`/projects/${projectId}`),

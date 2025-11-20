@@ -3,6 +3,12 @@ import { Button } from '@/components/ui/button';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import { Card } from '@/components/ui/card';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   ChevronDown,
   Clock,
   Github,
@@ -30,6 +36,8 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { projectKeys } from '@/hooks/useProjects';
 import type { ParsedLogLine } from '@/services/projects';
+import { useAuth } from '@/hooks/useAuth';
+import { services } from '@/services';
 
 interface DashboardMainSectionProps {
   team: Team;
@@ -38,6 +46,8 @@ interface DashboardMainSectionProps {
 export default function DashboardMainSection({
   team,
 }: DashboardMainSectionProps) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [githubUrl, setGithubUrl] = useState('');
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -46,6 +56,9 @@ export default function DashboardMainSection({
   const [deploymentSuccess, setDeploymentSuccess] = useState<string | null>(
     null
   );
+  const [isBuildingOldJson, setIsBuildingOldJson] = useState(false);
+  const [isBuildingOldSql, setIsBuildingOldSql] = useState(false);
+  const [oldBuildError, setOldBuildError] = useState<string | null>(null);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const buildLogsRef = useRef<HTMLDivElement | null>(null);
   const containerLogsRef = useRef<HTMLDivElement | null>(null);
@@ -241,6 +254,94 @@ export default function DashboardMainSection({
     }
   };
 
+  const handleBuildOldJson = async () => {
+    if (isBuildingOldJson || isBuildingOldSql || isDeploying) {
+      return;
+    }
+
+    if (!githubUrl.trim()) {
+      return;
+    }
+
+    setOldBuildError(null);
+    setIsBuildingOldJson(true);
+
+    try {
+      const response = await services.projects.buildOldJson({
+        githubUrl: githubUrl.trim(),
+        teamId: team.id,
+      });
+      
+      if (response.data) {
+        // Invalidate queries to refresh the project list
+        queryClient.invalidateQueries({
+          queryKey: projectKeys.listByTeam(team.id),
+        });
+        queryClient.setQueryData(
+          projectKeys.detail(response.data.id),
+          response.data
+        );
+        queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
+        
+        setDeploymentSuccess('Old JSON project built successfully!');
+        setTimeout(() => setDeploymentSuccess(null), 5000);
+      }
+    } catch (error) {
+      console.error('Old JSON build failed:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Old JSON build failed. Please try again.';
+      setOldBuildError(errorMessage);
+    } finally {
+      setIsBuildingOldJson(false);
+    }
+  };
+
+  const handleBuildOldSql = async () => {
+    if (isBuildingOldJson || isBuildingOldSql || isDeploying) {
+      return;
+    }
+
+    if (!githubUrl.trim()) {
+      return;
+    }
+
+    setOldBuildError(null);
+    setIsBuildingOldSql(true);
+
+    try {
+      const response = await services.projects.buildOldSql({
+        githubUrl: githubUrl.trim(),
+        teamId: team.id,
+      });
+      
+      if (response.data) {
+        // Invalidate queries to refresh the project list
+        queryClient.invalidateQueries({
+          queryKey: projectKeys.listByTeam(team.id),
+        });
+        queryClient.setQueryData(
+          projectKeys.detail(response.data.id),
+          response.data
+        );
+        queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
+        
+        setDeploymentSuccess('Old SQL project built successfully!');
+        setTimeout(() => setDeploymentSuccess(null), 5000);
+      }
+    } catch (error) {
+      console.error('Old SQL build failed:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Old SQL build failed. Please try again.';
+      setOldBuildError(errorMessage);
+    } finally {
+      setIsBuildingOldSql(false);
+    }
+  };
+
   // Determine status from latest project (first entry in projects array)
   // Map API status values to badge status values
   const getProjectStatus = () => {
@@ -313,7 +414,7 @@ export default function DashboardMainSection({
                 />
                 <Button
                   onClick={handleDeploy}
-                  disabled={isDeploying || !githubUrl.trim()}
+                  disabled={isDeploying || isBuildingOldJson || isBuildingOldSql || !githubUrl.trim()}
                   className="bg-black hover:bg-gray-800 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   aria-busy={isDeploying}
                 >
@@ -326,6 +427,49 @@ export default function DashboardMainSection({
                     'Deploy'
                   )}
                 </Button>
+                {isAdmin && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        disabled={isDeploying || isBuildingOldJson || isBuildingOldSql || !githubUrl.trim()}
+                        className="bg-gray-600 hover:bg-gray-700 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        Alternative Build
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={handleBuildOldJson}
+                        disabled={isDeploying || isBuildingOldJson || isBuildingOldSql || !githubUrl.trim()}
+                        className="cursor-pointer"
+                      >
+                        {isBuildingOldJson ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Building Old JSON...
+                          </>
+                        ) : (
+                          'Build Old JSON'
+                        )}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleBuildOldSql}
+                        disabled={isDeploying || isBuildingOldJson || isBuildingOldSql || !githubUrl.trim()}
+                        className="cursor-pointer"
+                      >
+                        {isBuildingOldSql ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Building Old SQL...
+                          </>
+                        ) : (
+                          'Build Old SQL'
+                        )}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <File className="h-4 w-4 text-gray-600" />
@@ -383,6 +527,12 @@ export default function DashboardMainSection({
                   {streamingDeploy.error.message ||
                     'Deployment failed. Please try again.'}
                 </span>
+              </div>
+            )}
+            {oldBuildError && (
+              <div className="flex items-center gap-2 text-red-600 text-sm">
+                <AlertCircle className="h-4 w-4" />
+                <span>{oldBuildError}</span>
               </div>
             )}
           </div>

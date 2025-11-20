@@ -40,8 +40,10 @@ export default function CourseTeamDashboard() {
       return;
     }
     
+    // Check if user can manage (instructor or admin) and is viewing a team they're not part of
+    const canManage = user?.role === 'ADMIN' || user?.role === 'INSTRUCTOR';
     if (
-      user?.role === 'ADMIN' &&
+      canManage &&
       team &&
       teamIdNum &&
       myTeams &&

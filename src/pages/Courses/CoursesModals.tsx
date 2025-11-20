@@ -9,7 +9,7 @@ import {
   EditCourseModal,
   NewCourseOfferingModal,
 } from '@/components/modals';
-import type { CourseOffering, Semester } from '@/services';
+import type { Semester, Course } from '@/services';
 
 interface CoursesModalsProps {
   isNewSemesterModalOpen: boolean;
@@ -18,7 +18,7 @@ interface CoursesModalsProps {
   isNewCourseOfferingModalOpen: boolean;
   isEditCourseModalOpen: boolean;
   selectedSemester: Semester | null;
-  selectedOffering: CourseOffering | null;
+  selectedCourse: Course | null;
   onCloseNewSemester: () => void;
   onCloseEditSemester: () => void;
   onCloseNewCourse: () => void;
@@ -26,6 +26,8 @@ interface CoursesModalsProps {
   onCloseEditCourse: () => void;
   onNewCourseClick: () => void;
   onNewSemesterClick: () => void;
+  onEditCourseClick?: (courseId: number) => void;
+  onEditSemesterClick?: (semesterId: number) => void;
 }
 
 export function CoursesModals({
@@ -35,7 +37,7 @@ export function CoursesModals({
   isNewCourseOfferingModalOpen,
   isEditCourseModalOpen,
   selectedSemester,
-  selectedOffering,
+  selectedCourse,
   onCloseNewSemester,
   onCloseEditSemester,
   onCloseNewCourse,
@@ -43,6 +45,8 @@ export function CoursesModals({
   onCloseEditCourse,
   onNewCourseClick,
   onNewSemesterClick,
+  onEditCourseClick,
+  onEditSemesterClick,
 }: CoursesModalsProps) {
   const dispatch = useAppDispatch();
 
@@ -89,12 +93,14 @@ export function CoursesModals({
         }}
         onNewCourseClick={onNewCourseClick}
         onNewSemesterClick={onNewSemesterClick}
+        onEditCourseClick={onEditCourseClick}
+        onEditSemesterClick={onEditSemesterClick}
       />
 
       <EditCourseModal
         isOpen={isEditCourseModalOpen}
         onClose={onCloseEditCourse}
-        course={selectedOffering as any}
+        course={selectedCourse}
       />
     </>
   );
