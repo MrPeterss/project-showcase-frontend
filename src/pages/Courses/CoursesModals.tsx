@@ -45,8 +45,6 @@ export function CoursesModals({
   onCloseEditCourse,
   onNewCourseClick,
   onNewSemesterClick,
-  onEditCourseClick,
-  onEditSemesterClick,
 }: CoursesModalsProps) {
   const dispatch = useAppDispatch();
 
