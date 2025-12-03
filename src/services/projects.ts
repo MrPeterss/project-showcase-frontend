@@ -1,4 +1,4 @@
-import { api, type ApiResponse } from '@/lib/api'
+import { api, apiClient, type ApiResponse } from '@/lib/api'
 import type { Project, CreateProjectData, UpdateProjectData } from './types'
 
 export interface DeployProjectData {
@@ -383,6 +383,31 @@ export const projectServices = {
   // Delete project
   delete: (projectId: number): Promise<ApiResponse<void>> =>
     api.delete(`/projects/${projectId}`),
+
+  // Tag all projects for a course offering
+  tagProjects: (offeringId: number, tag: string): Promise<ApiResponse<void>> =>
+    api.post(`/course-offerings/${offeringId}/projects/tag`, { tag }),
+
+  // Remove tag from a course offering
+  removeTag: (
+    offeringId: number,
+    tag: string
+  ): Promise<
+    ApiResponse<{
+      message: string
+      result: {
+        untagged: number
+        skipped: number
+        errors: Array<{ teamId: number; error: string }>
+      }
+    }>
+  > => {
+    return apiClient
+      .delete(`/course-offerings/${offeringId}/projects/tag`, {
+        data: { tag },
+      })
+      .then((response) => ({ data: response.data, success: true }))
+  },
 }
 
 export default projectServices

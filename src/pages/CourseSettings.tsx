@@ -4,10 +4,26 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useCourseContext } from '@/components/CourseLayout';
-import { ArrowLeft, Upload, Users, Lock, Eye, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Upload,
+  Users,
+  Lock,
+  Eye,
+  Trash2,
+  Tag,
+  RefreshCw,
+  Download,
+  Pencil,
+  Check,
+  X,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { services } from '@/services';
-import { useUpdateCourseOffering, useDeleteCourseOffering } from '@/hooks/useCourseOfferings';
+import {
+  useUpdateCourseOffering,
+  useDeleteCourseOffering,
+} from '@/hooks/useCourseOfferings';
 import {
   useEnrollmentsByOffering,
   useCreateEnrollments,
@@ -38,18 +54,25 @@ export default function CourseSettings() {
 
   // Get enrollments using React Query
   const offeringId = courseId ? parseInt(courseId, 10) : undefined;
-  const { data: enrollmentsData } = useEnrollmentsByOffering(offeringId);
+  const { data: enrollmentsData, refetch: refetchEnrollments } =
+    useEnrollmentsByOffering(offeringId);
   const enrollments = enrollmentsData || [];
+
+  // State for editing user names
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [editingName, setEditingName] = useState<string>('');
+  const [isUpdatingName, setIsUpdatingName] = useState(false);
 
   // State for settings
   const [lockProjectServer, setLockProjectServer] = useState(false);
-  const [studentInput, setStudentInput] = useState('');
-  const [showAddStudents, setShowAddStudents] = useState(false);
-  const [instructorInput, setInstructorInput] = useState('');
-  const [showAddInstructors, setShowAddInstructors] = useState(false);
+  const [enrollmentInput, setEnrollmentInput] = useState('');
+  const [showAddEnrollments, setShowAddEnrollments] = useState(false);
   const [selectedViewableOfferings, setSelectedViewableOfferings] = useState<
     number[]
   >([]);
+  const [tagInput, setTagInput] = useState('');
+  const [isTagging, setIsTagging] = useState(false);
+  const [removingTag, setRemovingTag] = useState<string | null>(null);
 
   const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
 
@@ -107,11 +130,11 @@ export default function CourseSettings() {
 
   const handleDeleteCourseOffering = async () => {
     if (!offering || !offeringId) return;
-    
+
     const confirmed = window.confirm(
       'Are you sure you want to delete this course offering? This action cannot be undone.'
     );
-    
+
     if (!confirmed) return;
 
     try {
@@ -124,12 +147,32 @@ export default function CourseSettings() {
   };
 
   // Handler functions
-  const parseStudentInput = (input: string) => {
-    // Parse comma-separated values: "email, team_name"
+  const parseEnrollmentInput = (input: string) => {
+    // Parse comma-separated values: "email, role, name, team_name"
+    // All fields except email are optional
+    // Empty fields between commas are allowed (e.g., "email,,," or "email, INSTRUCTOR,,")
     const lines = input.split('\n').filter((line) => line.trim());
     return lines.map((line) => {
-      const [email, teamName] = line.split(',').map((s) => s.trim());
-      return { email, teamName: teamName || undefined };
+      // Split by comma and trim each part
+      const parts = line.split(',').map((s) => s.trim());
+      const email = parts[0] || '';
+      const role = parts[1] || '';
+      const name = parts[2] || '';
+      const teamName = parts[3] || '';
+
+      // Validate role if provided (non-empty)
+      const validRoles = ['INSTRUCTOR', 'STUDENT', 'VIEWER'];
+      const enrollmentRole =
+        role && validRoles.includes(role.toUpperCase())
+          ? (role.toUpperCase() as 'INSTRUCTOR' | 'STUDENT' | 'VIEWER')
+          : undefined;
+
+      return {
+        email,
+        role: enrollmentRole,
+        name: name || undefined,
+        teamName: teamName || undefined,
+      };
     });
   };
 
@@ -141,26 +184,64 @@ export default function CourseSettings() {
 
     try {
       const text = await file.text();
-      const students = parseStudentInput(text);
-      await addStudents(students);
+      const enrollments = parseEnrollmentInput(text);
+      await addEnrollments(enrollments);
     } catch (error) {
       console.error('Error processing CSV file:', error);
       // TODO: Show error message to user
     }
   };
 
-  const addStudents = async (
-    students: Array<{ email: string; teamName?: string }>
+  const handleDownloadTemplate = () => {
+    // Create CSV template content
+    const templateContent = `email,role,name,team_name
+pjb294@cornell.edu,,,
+pjb294@cornell.edu, INSTRUCTOR,,
+pjb294@cornell.edu,,Peter Bidoshi,
+pjb294@cornell.edu,,,Team 3
+student1@cornell.edu,STUDENT,John Doe,Team A
+student2@cornell.edu,STUDENT,Jane Smith,Team A`;
+
+    // Create blob and download
+    const blob = new Blob([templateContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'enrollment_template.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const addEnrollments = async (
+    enrollments: Array<{
+      email: string;
+      role?: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER';
+      name?: string;
+      teamName?: string;
+    }>
   ) => {
     if (!offering || !offeringId) return;
 
     try {
       // Create enrollments using React Query mutation
+      // Default role to STUDENT if not provided
       const enrollmentData = {
-        enrollments: students.map((s) => ({
-          email: s.email,
-          role: 'STUDENT' as const,
-        })),
+        enrollments: enrollments.map((e) => {
+          const enrollment: {
+            email: string;
+            role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER';
+            name?: string;
+          } = {
+            email: e.email,
+            role: e.role || 'STUDENT',
+          };
+          if (e.name) {
+            enrollment.name = e.name;
+          }
+          return enrollment;
+        }),
       };
 
       await createEnrollments.mutateAsync({
@@ -169,14 +250,18 @@ export default function CourseSettings() {
       });
 
       // Group students by team and create/update teams
+      // Only create teams for STUDENT enrollments with team names
       const teamsMap = new Map<string, string[]>();
-      students.forEach((student) => {
-        if (student.teamName) {
-          const teamName = student.teamName;
+      enrollments.forEach((enrollment) => {
+        if (
+          enrollment.teamName &&
+          (!enrollment.role || enrollment.role === 'STUDENT')
+        ) {
+          const teamName = enrollment.teamName;
           if (!teamsMap.has(teamName)) {
             teamsMap.set(teamName, []);
           }
-          teamsMap.get(teamName)!.push(student.email);
+          teamsMap.get(teamName)!.push(enrollment.email);
         }
       });
 
@@ -194,57 +279,18 @@ export default function CourseSettings() {
         }
       }
 
-      setStudentInput('');
-      setShowAddStudents(false);
+      setEnrollmentInput('');
+      setShowAddEnrollments(false);
     } catch (error) {
-      console.error('Error adding students:', error);
+      console.error('Error adding enrollments:', error);
       // TODO: Show error message to user
     }
   };
 
-  const handleAddStudents = () => {
-    if (!studentInput.trim()) return;
-    const students = parseStudentInput(studentInput);
-    addStudents(students);
-  };
-
-  const parseInstructorInput = (input: string) => {
-    // Parse email addresses, one per line or separated by commas
-    return input
-      .split(/[,\n;]/)
-      .map((email) => email.trim())
-      .filter((email) => email.length > 0);
-  };
-
-  const addInstructors = async (emails: string[]) => {
-    if (!offering || !offeringId) return;
-
-    try {
-      // Create enrollments with INSTRUCTOR role using React Query mutation
-      const enrollmentData = {
-        enrollments: emails.map((email) => ({
-          email,
-          role: 'INSTRUCTOR' as const,
-        })),
-      };
-
-      await createEnrollments.mutateAsync({
-        offeringId: offering.id,
-        data: enrollmentData,
-      });
-
-      setInstructorInput('');
-      setShowAddInstructors(false);
-    } catch (error) {
-      console.error('Error adding instructors:', error);
-      // TODO: Show error message to user
-    }
-  };
-
-  const handleAddInstructors = () => {
-    if (!instructorInput.trim()) return;
-    const emails = parseInstructorInput(instructorInput);
-    addInstructors(emails);
+  const handleAddEnrollments = () => {
+    if (!enrollmentInput.trim()) return;
+    const enrollments = parseEnrollmentInput(enrollmentInput);
+    addEnrollments(enrollments);
   };
 
   const handleRemoveEnrollment = async (userId: number) => {
@@ -258,6 +304,35 @@ export default function CourseSettings() {
     } catch (error) {
       console.error('Error removing enrollment:', error);
       // TODO: Show error message to user
+    }
+  };
+
+  const handleStartEditName = (userId: number, currentName: string | null) => {
+    setEditingUserId(userId);
+    setEditingName(currentName || '');
+  };
+
+  const handleCancelEditName = () => {
+    setEditingUserId(null);
+    setEditingName('');
+  };
+
+  const handleSaveName = async (userId: number) => {
+    if (!user || user.role !== 'ADMIN') return;
+
+    setIsUpdatingName(true);
+    try {
+      const nameValue = editingName.trim() || null;
+      await services.admin.updateUserName(userId, nameValue);
+      // Refetch enrollments to get updated name
+      await refetchEnrollments();
+      setEditingUserId(null);
+      setEditingName('');
+    } catch (error) {
+      console.error('Error updating user name:', error);
+      alert('Failed to update user name. Please try again.');
+    } finally {
+      setIsUpdatingName(false);
     }
   };
 
@@ -291,6 +366,106 @@ export default function CourseSettings() {
     } catch (error) {
       console.error('Error saving visibility settings:', error);
       // TODO: Show error message to user
+    }
+  };
+
+  const handleTagProjects = async () => {
+    if (!offering || !offeringId || !tagInput.trim()) return;
+
+    const trimmedTag = tagInput.trim();
+
+    // Get existing tags from settings
+    const existingTags: string[] = offering.settings?.project_tags || [];
+
+    // Check for duplicate tag names
+    if (existingTags.includes(trimmedTag)) {
+      alert(
+        `Tag "${trimmedTag}" already exists. Please use a different tag name.`
+      );
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to tag all projects with "${trimmedTag}"? This will tag all projects and give the currently deployed ones this version.`
+    );
+
+    if (!confirmed) return;
+
+    setIsTagging(true);
+    try {
+      // Tag the projects
+      await services.projects.tagProjects(offeringId, trimmedTag);
+
+      // Update settings with the new tag
+      const updatedTags = [...existingTags, trimmedTag];
+      await updateCourseOffering.mutateAsync({
+        id: offering.id,
+        data: {
+          settings: {
+            ...offering.settings,
+            project_tags: updatedTags,
+          },
+        },
+      });
+
+      // Refresh offering to get updated settings
+      await refetchOffering();
+
+      setTagInput('');
+      alert('Projects tagged successfully!');
+    } catch (error) {
+      console.error('Error tagging projects:', error);
+      alert('Failed to tag projects. Please try again.');
+    } finally {
+      setIsTagging(false);
+    }
+  };
+
+  const handleRemoveTag = async (tag: string) => {
+    if (!offering || !offeringId) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to remove the tag "${tag}"? This will untag all projects with this tag. Projects will be marked for pruning if they are also non-running.`
+    );
+
+    if (!confirmed) return;
+
+    setRemovingTag(tag);
+    try {
+      const response = await services.projects.removeTag(offeringId, tag);
+      const result = response.data.result;
+
+      // Show success message with details
+      let message = `Tag "${tag}" removed successfully!\n\nUntagged projects: ${result.untagged}`;
+      if (result.errors && result.errors.length > 0) {
+        message += `\n\nErrors:\n${result.errors
+          .map((e) => `Team ${e.teamId}: ${e.error}`)
+          .join('\n')}`;
+      }
+
+      alert(message);
+
+      // Update settings to remove the tag from project_tags array
+      const existingTags: string[] = offering.settings?.project_tags || [];
+      const updatedTags = existingTags.filter((t) => t !== tag);
+
+      await updateCourseOffering.mutateAsync({
+        id: offering.id,
+        data: {
+          settings: {
+            ...offering.settings,
+            project_tags: updatedTags,
+          },
+        },
+      });
+
+      // Refresh offering to get updated settings
+      await refetchOffering();
+    } catch (error) {
+      console.error('Error removing tag:', error);
+      alert('Failed to remove tag. Please try again.');
+    } finally {
+      setRemovingTag(null);
     }
   };
 
@@ -341,40 +516,157 @@ export default function CourseSettings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Enrollments List */}
-              <div>
-                {enrollments.length === 0 ? (
-                  <p className="text-muted-foreground">No enrollments found.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {enrollments.map((enrollment) => (
-                      <div
-                        key={enrollment.userId}
-                        className="flex items-center justify-between p-3 border rounded-md hover:bg-gray-50"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="font-medium">
-                            {enrollment.user?.email ||
-                              `User ${enrollment.userId}`}
-                          </span>
-                          <Badge variant="outline">{enrollment.role}</Badge>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            handleRemoveEnrollment(enrollment.userId)
-                          }
-                          disabled={deleteEnrollment.isPending}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              {/* Enrollments Table */}
+              {enrollments.length === 0 ? (
+                <p className="text-muted-foreground">No enrollments found.</p>
+              ) : (
+                <div className="space-y-6">
+                  {/* Group enrollments by role */}
+                  {(['INSTRUCTOR', 'STUDENT', 'VIEWER'] as const).map(
+                    (role) => {
+                      const roleEnrollments = enrollments.filter(
+                        (e) => e.role === role
+                      );
+                      if (roleEnrollments.length === 0) return null;
+
+                      return (
+                        <div
+                          key={role}
+                          className="space-y-2 border-b pb-6 last:border-b-0 last:pb-0"
                         >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                          <h4 className="text-sm font-semibold text-gray-700 capitalize">
+                            {role}s ({roleEnrollments.length})
+                          </h4>
+                          <div className="border rounded-md overflow-hidden">
+                            <div className="max-h-64 overflow-y-auto">
+                              <table className="w-full">
+                                <thead className="bg-gray-50 sticky top-0">
+                                  <tr>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 border-b border-r">
+                                      Name
+                                    </th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 border-b border-r">
+                                      Email
+                                    </th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 border-b border-l">
+                                      Actions
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {roleEnrollments.map((enrollment) => {
+                                    const currentName =
+                                      (enrollment.user as any)?.name || null;
+                                    const isEditing =
+                                      editingUserId === enrollment.userId;
+                                    const isAdmin = user?.role === 'ADMIN';
+
+                                    return (
+                                      <tr
+                                        key={enrollment.userId}
+                                        className="hover:bg-gray-50 border-b last:border-b-0"
+                                      >
+                                        <td className="px-4 py-2 text-sm text-left border-r">
+                                          {isEditing ? (
+                                            <div className="flex items-center gap-1">
+                                              <input
+                                                type="text"
+                                                value={editingName}
+                                                onChange={(e) =>
+                                                  setEditingName(e.target.value)
+                                                }
+                                                className="px-2 py-1 border rounded text-sm w-32"
+                                                autoFocus
+                                                onKeyDown={(e) => {
+                                                  if (e.key === 'Enter') {
+                                                    handleSaveName(
+                                                      enrollment.userId
+                                                    );
+                                                  } else if (
+                                                    e.key === 'Escape'
+                                                  ) {
+                                                    handleCancelEditName();
+                                                  }
+                                                }}
+                                              />
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() =>
+                                                  handleSaveName(
+                                                    enrollment.userId
+                                                  )
+                                                }
+                                                disabled={isUpdatingName}
+                                                className="h-6 w-6 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                              >
+                                                <Check className="h-3 w-3" />
+                                              </Button>
+                                              <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={handleCancelEditName}
+                                                disabled={isUpdatingName}
+                                                className="h-6 w-6 p-0 text-gray-600 hover:text-gray-700 hover:bg-gray-50"
+                                              >
+                                                <X className="h-3 w-3" />
+                                              </Button>
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-1">
+                                              <span>{currentName || '-'}</span>
+                                              {isAdmin && (
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  onClick={() =>
+                                                    handleStartEditName(
+                                                      enrollment.userId,
+                                                      currentName
+                                                    )
+                                                  }
+                                                  className="h-5 w-5 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                                                >
+                                                  <Pencil className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-2 text-sm text-left border-r">
+                                          {enrollment.user?.email ||
+                                            `User ${enrollment.userId}`}
+                                        </td>
+                                        <td className="px-4 py-2 text-left border-l">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() =>
+                                              handleRemoveEnrollment(
+                                                enrollment.userId
+                                              )
+                                            }
+                                            disabled={
+                                              deleteEnrollment.isPending
+                                            }
+                                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
+              )}
 
               {/* Divider */}
               <div className="flex items-center gap-4">
@@ -395,7 +687,7 @@ export default function CourseSettings() {
                 {/* CSV Upload Option */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Upload CSV File</label>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <input
                       type="file"
                       accept=".csv"
@@ -413,8 +705,17 @@ export default function CourseSettings() {
                       <Upload className="h-4 w-4" />
                       Choose CSV File
                     </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleDownloadTemplate}
+                      className="flex items-center gap-2"
+                    >
+                      <Download className="h-4 w-4" />
+                      Download Template
+                    </Button>
                     <span className="text-xs text-muted-foreground">
-                      Format: email, team_name
+                      Format: email, role, name, team_name (all optional except
+                      email)
                     </span>
                   </div>
                 </div>
@@ -431,104 +732,40 @@ export default function CourseSettings() {
                   <label className="text-sm font-medium">Enter Manually</label>
                   <Button
                     variant="outline"
-                    onClick={() => setShowAddStudents(!showAddStudents)}
+                    onClick={() => setShowAddEnrollments(!showAddEnrollments)}
                     className="flex items-center gap-2"
                   >
                     <Users className="h-4 w-4" />
-                    {showAddStudents
+                    {showAddEnrollments
                       ? 'Hide Manual Entry'
-                      : 'Add Students Manually'}
+                      : 'Add Members Manually'}
                   </Button>
 
-                  {showAddStudents && (
+                  {showAddEnrollments && (
                     <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
                       <div>
                         <label className="text-sm font-medium block mb-2">
                           User Information (one per line)
                         </label>
                         <textarea
-                          value={studentInput}
-                          onChange={(e) => setStudentInput(e.target.value)}
-                          placeholder="student1@cornell.edu, Team A&#10;student2@cornell.edu, Team A&#10;student3@cornell.edu, Team B&#10;student4@cornell.edu"
+                          value={enrollmentInput}
+                          onChange={(e) => setEnrollmentInput(e.target.value)}
+                          placeholder="pjb294@cornell.edu,,,&#10;pjb294@cornell.edu, INSTRUCTOR,,&#10;pjb294@cornell.edu,,Peter Bidoshi,&#10;pjb294@cornell.edu,,,Team 3&#10;student1@cornell.edu, STUDENT, John Doe, Team A"
                           className="w-full h-32 p-3 border rounded-md text-sm"
                         />
                         <p className="text-xs text-muted-foreground mt-1">
-                          Format: email, team_name (team_name is optional)
+                          Format: email, role, name, team_name (all optional
+                          except email). Leave fields blank between commas to
+                          skip them. Default role is STUDENT.
                         </p>
                       </div>
                       <div className="flex gap-2">
-                        <Button onClick={handleAddStudents} size="sm">
+                        <Button onClick={handleAddEnrollments} size="sm">
                           Add Members
                         </Button>
                         <Button
                           variant="outline"
-                          onClick={() => setShowAddStudents(false)}
-                          size="sm"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div className="flex items-center gap-4">
-                <div className="flex-1 h-px bg-gray-200"></div>
-                <span className="text-sm text-gray-500 font-medium">
-                  Add Instructors
-                </span>
-                <div className="flex-1 h-px bg-gray-200"></div>
-              </div>
-
-              {/* Add Instructors Section */}
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Add instructors to this course by entering their email
-                  addresses.
-                </p>
-
-                {/* Manual Entry Option */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    Enter Instructor Emails
-                  </label>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowAddInstructors(!showAddInstructors)}
-                    className="flex items-center gap-2"
-                  >
-                    <Users className="h-4 w-4" />
-                    {showAddInstructors
-                      ? 'Hide Instructor Entry'
-                      : 'Add Instructors Manually'}
-                  </Button>
-
-                  {showAddInstructors && (
-                    <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
-                      <div>
-                        <label className="text-sm font-medium block mb-2">
-                          Instructor Email Addresses (one per line)
-                        </label>
-                        <textarea
-                          value={instructorInput}
-                          onChange={(e) => setInstructorInput(e.target.value)}
-                          placeholder="instructor1@cornell.edu&#10;instructor2@cornell.edu&#10;instructor3@cornell.edu"
-                          className="w-full h-32 p-3 border rounded-md text-sm"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Format: email addresses separated by commas,
-                          semicolons, or new lines
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button onClick={handleAddInstructors} size="sm">
-                          Add Instructors
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => setShowAddInstructors(false)}
+                          onClick={() => setShowAddEnrollments(false)}
                           size="sm"
                         >
                           Cancel
@@ -651,6 +888,104 @@ export default function CourseSettings() {
             </CardContent>
           </Card>
 
+          {/* Tag Projects Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Tag className="h-5 w-5" />
+                Tag Projects
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <h4 className="font-medium text-left mb-2">
+                  Version All Projects
+                </h4>
+                <p className="text-sm text-muted-foreground text-left mb-4">
+                  Tag all projects and give the currently deployed ones a
+                  version tag. This is useful for marking submission deadlines
+                  or milestones.
+                </p>
+              </div>
+
+              {/* Display existing tags */}
+              {offering &&
+                offering.settings?.project_tags &&
+                offering.settings.project_tags.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-sm font-medium">Issued Tags:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {offering.settings.project_tags.map((tag, index) => (
+                        <Badge
+                          key={index}
+                          variant="secondary"
+                          className="text-sm flex items-center gap-1 pr-1"
+                        >
+                          {tag}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveTag(tag);
+                            }}
+                            disabled={removingTag === tag}
+                            className="ml-1 hover:bg-gray-300 rounded-full p-0.5 disabled:opacity-50 transition-colors"
+                            aria-label={`Remove tag ${tag}`}
+                          >
+                            {removingTag === tag ? (
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3 w-3 text-red-600" />
+                            )}
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Divider if there are existing tags */}
+              {offering &&
+                offering.settings?.project_tags &&
+                offering.settings.project_tags.length > 0 && (
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 h-px bg-gray-200"></div>
+                    <span className="text-sm text-gray-500 font-medium">
+                      Create New Tag
+                    </span>
+                    <div className="flex-1 h-px bg-gray-200"></div>
+                  </div>
+                )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-sm font-medium block mb-2">
+                    Tag Name
+                  </label>
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    placeholder="e.g., final-submission, milestone-1, v1.0"
+                    className="w-full p-3 border rounded-md text-sm"
+                    disabled={isTagging}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enter a tag name to mark all currently deployed projects
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handleTagProjects}
+                  disabled={isTagging || !tagInput.trim()}
+                  className="bg-red-700 hover:bg-red-800 text-white"
+                >
+                  <Tag className="h-4 w-4 mr-2" />
+                  {isTagging ? 'Tagging...' : 'Tag All Projects'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Delete Course Offering Section - Admin Only */}
           {user?.role === 'ADMIN' && (
             <Card className="border-red-200">
@@ -663,9 +998,13 @@ export default function CourseSettings() {
               <CardContent>
                 <div className="space-y-4">
                   <div>
-                    <h4 className="font-medium text-left mb-2">Delete Course Offering</h4>
+                    <h4 className="font-medium text-left mb-2">
+                      Delete Course Offering
+                    </h4>
                     <p className="text-sm text-muted-foreground text-left mb-4">
-                      Permanently delete this course offering. This action cannot be undone and will remove all associated data including enrollments, teams, and projects.
+                      Permanently delete this course offering. This action
+                      cannot be undone and will remove all associated data
+                      including enrollments, teams, and projects.
                     </p>
                     <Button
                       variant="destructive"
@@ -674,7 +1013,9 @@ export default function CourseSettings() {
                       className="bg-red-600 hover:bg-red-700 text-white"
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
-                      {deleteCourseOffering.isPending ? 'Deleting...' : 'Delete Course Offering'}
+                      {deleteCourseOffering.isPending
+                        ? 'Deleting...'
+                        : 'Delete Course Offering'}
                     </Button>
                   </div>
                 </div>

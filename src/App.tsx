@@ -23,6 +23,7 @@ import CourseSettings from './pages/CourseSettings';
 import Dashboard from './pages/Dashboard';
 import ProjectNotFound from './pages/ProjectNotFound';
 import LoginCard from './components/LoginCard';
+import Admin from './pages/Admin';
 
 function AppContent() {
   const location = useLocation();
@@ -31,7 +32,8 @@ function AppContent() {
     location.pathname !== '/courses' &&
     !location.pathname.startsWith('/courses/') &&
     !location.pathname.startsWith('/dashboard/') &&
-    !location.pathname.startsWith('/not-found/');
+    !location.pathname.startsWith('/not-found/') &&
+    !location.pathname.startsWith('/admin');
 
   return (
     <div className="min-h-svh">
@@ -49,6 +51,7 @@ function AppContent() {
             <Route path="settings" element={<CourseSettings />} />
           </Route>
           <Route path="/dashboard/:teamId" element={<Dashboard />} />
+          <Route path="/admin" element={<Admin />} />
           <Route path="/not-found/:team_name" element={<ProjectNotFound />} />
           <Route path="/login" element={<LoginCard />} />
           <Route path="/" element={<Navigate to="/login" replace />} />

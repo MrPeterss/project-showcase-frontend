@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { services } from '@/services'
 import type { CreateProjectData, UpdateProjectData, Project } from '@/services/types'
 import type { DeployProjectData } from '@/services/projects'
+import { teamKeys } from './useTeams'
 
 export const projectKeys = {
   all: ['projects'] as const,
@@ -97,6 +98,10 @@ export const useDeployProject = (teamId: number) => {
       queryClient.setQueryData(projectKeys.detail(deployed.data.id), deployed.data)
       // Invalidate containers list
       queryClient.invalidateQueries({ queryKey: projectKeys.containers() })
+      // Invalidate all project lists
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
+      // Invalidate all teams lists since teams include projects
+      queryClient.invalidateQueries({ queryKey: teamKeys.lists() })
     },
   })
 }
@@ -113,6 +118,10 @@ export const useDeployLegacyProject = (teamId: number) => {
       queryClient.setQueryData(projectKeys.detail(deployed.data.id), deployed.data)
       // Invalidate containers list
       queryClient.invalidateQueries({ queryKey: projectKeys.containers() })
+      // Invalidate all project lists
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
+      // Invalidate all teams lists since teams include projects
+      queryClient.invalidateQueries({ queryKey: teamKeys.lists() })
     },
   })
 }
@@ -130,8 +139,12 @@ export const useStopProject = (teamId?: number) => {
       } else {
         queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
       }
+      // Invalidate all project lists
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
       // Invalidate containers list
       queryClient.invalidateQueries({ queryKey: projectKeys.containers() })
+      // Invalidate all teams lists since teams include projects
+      queryClient.invalidateQueries({ queryKey: teamKeys.lists() })
     },
   })
 }
@@ -146,6 +159,10 @@ export const useCreateProject = (teamId: number) => {
       queryClient.invalidateQueries({ queryKey: projectKeys.listByTeam(teamId) })
       // Seed detail cache
       queryClient.setQueryData(projectKeys.detail(created.data.id), created.data)
+      // Invalidate all project lists
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
+      // Invalidate all teams lists since teams include projects
+      queryClient.invalidateQueries({ queryKey: teamKeys.lists() })
     },
   })
 }
@@ -160,6 +177,8 @@ export const useUpdateProject = () => {
       queryClient.setQueryData(projectKeys.detail(variables.projectId), updated.data)
       // Invalidate all project lists
       queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
+      // Invalidate all teams lists since teams include projects
+      queryClient.invalidateQueries({ queryKey: teamKeys.lists() })
     },
   })
 }
@@ -177,6 +196,10 @@ export const useDeleteProject = (teamId?: number) => {
       } else {
         queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
       }
+      // Invalidate all project lists
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() })
+      // Invalidate all teams lists since teams include projects
+      queryClient.invalidateQueries({ queryKey: teamKeys.lists() })
     },
   })
 }

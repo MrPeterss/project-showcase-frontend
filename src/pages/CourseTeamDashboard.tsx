@@ -3,6 +3,7 @@ import { useMemo, useEffect, useRef } from 'react';
 import { useTeam, useMyTeamsByOffering } from '@/hooks/useTeams';
 import { useAuth } from '@/hooks/useAuth';
 import { useDashboardTabs } from '@/context/DashboardTabsContext';
+import { useCourseContext } from '@/components/CourseLayout';
 import DashboardMainSection from './Dashboard/DashboardMainSection';
 import DashboardSideBarSection from './Dashboard/DashboardSideBarSection';
 
@@ -14,6 +15,7 @@ export default function CourseTeamDashboard() {
   const location = useLocation();
   const { user } = useAuth();
   const { addTab, openTabs } = useDashboardTabs();
+  const { effectiveRole } = useCourseContext();
   const isUnmountingRef = useRef(false);
 
   const teamIdNum = useMemo(() => {
@@ -35,8 +37,8 @@ export default function CourseTeamDashboard() {
     offeringId && user ? offeringId : undefined
   );
 
-  // Check if user can manage (instructor or admin)
-  const canManage = user?.role === 'ADMIN' || user?.role === 'INSTRUCTOR';
+  // Check if user can manage (instructor or admin) - use effectiveRole to respect student view toggle
+  const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
 
   // Check if user is a member of this team
   const isTeamMember = myTeams?.some((t) => t.id === teamIdNum) ?? false;
@@ -67,7 +69,7 @@ export default function CourseTeamDashboard() {
       isUnmountingRef.current = true;
     };
   }, [
-    user?.role,
+    effectiveRole,
     team,
     teamIdNum,
     myTeams,

@@ -44,6 +44,7 @@ export const activityLogs = [
 export const getStatusIcon = (status: string) => {
   switch (status) {
     case 'ready':
+    case 'running':
       return <CheckCircle className="h-4 w-4 text-green-500" />;
     case 'building':
       return <Activity className="h-4 w-4 text-blue-500 animate-pulse" />;
@@ -51,25 +52,37 @@ export const getStatusIcon = (status: string) => {
       return <XCircle className="h-4 w-4 text-red-500" />;
     case 'queued':
       return <Clock className="h-4 w-4 text-yellow-500" />;
+    case 'stopped':
+      return <AlertCircle className="h-4 w-4 text-orange-500" />;
+    case 'pruned':
+      return <XCircle className="h-4 w-4 text-gray-500" />;
+    case 'none':
+      return <AlertCircle className="h-4 w-4 text-gray-400" />;
     default:
       return <AlertCircle className="h-4 w-4 text-gray-500" />;
   }
 };
 
 export const getStatusBadge = (status: string) => {
-  const variants = {
-    ready: 'bg-green-100 text-green-800 border-green-200 hover:bg-green-100',
-    building: 'bg-blue-100 text-blue-800 border-blue-200 hover:bg-blue-100',
-    error: 'bg-red-100 text-red-800 border-red-200 hover:bg-red-100',
-    queued: 'bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100',
-  } as const;
+  const variants: Record<string, string> = {
+    ready: 'bg-green-100 text-green-800 border-green-200',
+    running: 'bg-green-100 text-green-800 border-green-200',
+    building: 'bg-blue-100 text-blue-800 border-blue-200',
+    error: 'bg-red-100 text-red-800 border-red-200',
+    queued: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    stopped: 'bg-orange-100 text-orange-800 border-orange-200',
+    pruned: 'bg-gray-100 text-gray-600 border-gray-200',
+    none: 'bg-gray-100 text-gray-500 border-gray-200',
+  };
+
+  const displayStatus = status === 'none' ? 'not deployed' : status;
 
   return (
-    <Badge 
-      className={`${variants[status as keyof typeof variants]} border cursor-default`}
+    <Badge
+      className={`${variants[status] || 'bg-gray-100 text-gray-800 border-gray-200'} border cursor-default pointer-events-none`}
     >
       {getStatusIcon(status)}
-      <span className="ml-1 capitalize">{status}</span>
+      <span className="ml-1 capitalize">{displayStatus}</span>
     </Badge>
   );
 };

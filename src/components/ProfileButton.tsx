@@ -1,11 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LogOut } from 'lucide-react';
+import { LogOut, Settings } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 export function ProfileButton() {
   const { user, signOut } = useAuth();
+  const navigate = useNavigate();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
@@ -99,6 +101,20 @@ export function ProfileButton() {
           </div>
 
           <div className="p-2">
+            {user.role === 'ADMIN' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  navigate('/admin');
+                  setIsProfileOpen(false);
+                }}
+                className="w-full justify-start gap-2 hover:bg-gray-100"
+              >
+                <Settings className="h-4 w-4" />
+                Admin Dashboard
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"

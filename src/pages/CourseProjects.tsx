@@ -11,6 +11,11 @@ import {
   Pencil,
   Github,
   Trash2,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Activity,
+  AlertCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -109,6 +114,86 @@ export default function CourseProjects() {
 
   // Get site URL from environment variable or use window location
   const siteUrl = import.meta.env.VITE_SITE_URL || window.location.hostname;
+
+  // Get status icon for project
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'ready':
+      case 'running':
+        return <CheckCircle className="h-4 w-4 text-green-500" />;
+      case 'building':
+        return <Activity className="h-4 w-4 text-blue-500 animate-pulse" />;
+      case 'error':
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case 'queued':
+        return <Clock className="h-4 w-4 text-yellow-500" />;
+      case 'stopped':
+        return <AlertCircle className="h-4 w-4 text-orange-500" />;
+      case 'pruned':
+        return <XCircle className="h-4 w-4 text-gray-500" />;
+      case 'none':
+        return <AlertCircle className="h-4 w-4 text-gray-400" />;
+      default:
+        return <AlertCircle className="h-4 w-4 text-gray-500" />;
+    }
+  };
+
+  // Get status badge for project
+  const getStatusBadge = (status: string) => {
+    const variants: Record<string, string> = {
+      ready: 'bg-green-100 text-green-800 border-green-200',
+      running: 'bg-green-100 text-green-800 border-green-200',
+      building: 'bg-blue-100 text-blue-800 border-blue-200',
+      error: 'bg-red-100 text-red-800 border-red-200',
+      queued: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      stopped: 'bg-orange-100 text-orange-800 border-orange-200',
+      pruned: 'bg-gray-100 text-gray-600 border-gray-200',
+      none: 'bg-gray-100 text-gray-500 border-gray-200',
+    };
+
+    const displayStatus = status === 'none' ? 'not deployed' : status;
+
+    return (
+      <Badge
+        className={`${
+          variants[status] || 'bg-gray-100 text-gray-800 border-gray-200'
+        } border cursor-default pointer-events-none`}
+      >
+        {getStatusIcon(status)}
+        <span className="ml-1 capitalize">{displayStatus}</span>
+      </Badge>
+    );
+  };
+
+  // Map API status to display status
+  const getProjectStatus = (team: Team): string => {
+    const latestProject =
+      team.projects && team.projects.length > 0 ? team.projects[0] : null;
+
+    if (!latestProject) return 'none';
+
+    // Map API status to badge status
+    if (latestProject.status) {
+      const statusLower = latestProject.status.toLowerCase();
+
+      // Handle various status values from API
+      if (statusLower === 'stopped') return 'stopped';
+      if (statusLower === 'pruned') return 'pruned';
+      if (statusLower === 'failed' || statusLower === 'error') return 'error';
+      if (statusLower === 'building' || statusLower === 'queued')
+        return 'building';
+      if (statusLower === 'running') return 'running';
+      if (statusLower === 'ready' || statusLower === 'success') return 'ready';
+
+      // Default to the status as-is for unknown statuses
+      return statusLower;
+    }
+
+    // If no status but has stoppedAt, show stopped
+    if (latestProject.stoppedAt) return 'stopped';
+
+    return 'none';
+  };
 
   // Generate project URL for a team
   const getProjectUrl = (team: Team) => {
@@ -209,19 +294,20 @@ export default function CourseProjects() {
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse">
                     <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-3 font-semibold">
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-r">
                           Team Name
                         </th>
-                        <th className="text-left p-3 font-semibold">Members</th>
-                        <th className="text-left p-3 font-semibold">
+                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-r">
+                          Members
+                        </th>
+                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-r">
+                          Status
+                        </th>
+                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-r">
                           Last Updated
                         </th>
-                        <th
-                          className={`p-3 font-semibold ${
-                            canManage ? 'text-left' : 'text-right'
-                          }`}
-                        >
+                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-l">
                           Project Link
                         </th>
                       </tr>
@@ -242,13 +328,15 @@ export default function CourseProjects() {
 
                         const handleTeamNameClick = () => {
                           // Check if user is a member of this team
-                          const isTeamMember = myTeams?.some((t: Team) => t.id === team.id) ?? false;
-                          
+                          const isTeamMember =
+                            myTeams?.some((t: Team) => t.id === team.id) ??
+                            false;
+
                           // Students can only access their own teams
                           if (!canManage && !isTeamMember) {
                             return;
                           }
-                          
+
                           // If admin or instructor is viewing a team they're not part of, add it as a tab first
                           if (
                             canManage &&
@@ -281,12 +369,15 @@ export default function CourseProjects() {
                             key={team.id}
                             className="border-b hover:bg-gray-50"
                           >
-                            <td className="text-left p-3">
+                            <td className="text-left p-3 border-r">
                               <div className="flex items-center gap-2">
                                 {(() => {
-                                  const isTeamMember = myTeams?.some((t: Team) => t.id === team.id) ?? false;
+                                  const isTeamMember =
+                                    myTeams?.some(
+                                      (t: Team) => t.id === team.id
+                                    ) ?? false;
                                   const canAccess = canManage || isTeamMember;
-                                  
+
                                   return canAccess ? (
                                     <button
                                       onClick={handleTeamNameClick}
@@ -330,26 +421,21 @@ export default function CourseProjects() {
                                 )}
                               </div>
                             </td>
-                            <td className="text-left p-3">
+                            <td className="text-left p-3 border-r">
                               <Badge variant="outline">
                                 {team.members?.length || 0}
                               </Badge>
                             </td>
-                            <td className="text-left p-3 text-sm text-muted-foreground">
+                            <td className="text-left p-3 border-r">
+                              {getStatusBadge(getProjectStatus(team))}
+                            </td>
+                            <td className="text-left p-3 text-sm text-muted-foreground border-r">
                               {lastDeployed
                                 ? new Date(lastDeployed).toLocaleString()
                                 : 'Not deployed'}
                             </td>
-                            <td
-                              className={`p-3 ${
-                                canManage ? 'text-left' : 'text-right'
-                              }`}
-                            >
-                              <div
-                                className={`flex items-center gap-2 ${
-                                  canManage ? '' : 'justify-end'
-                                }`}
-                              >
+                            <td className="text-left p-3 border-l">
+                              <div className="flex items-center gap-2">
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -361,8 +447,15 @@ export default function CourseProjects() {
                                       'noopener,noreferrer'
                                     );
                                   }}
-                                  disabled={!isDeployed}
-                                  className="flex items-center gap-2"
+                                  disabled={
+                                    !isDeployed ||
+                                    getProjectStatus(team) !== 'running'
+                                  }
+                                  className={`flex items-center gap-2 ${
+                                    getProjectStatus(team) !== 'running'
+                                      ? 'opacity-50 cursor-not-allowed text-gray-500'
+                                      : ''
+                                  }`}
                                 >
                                   <ExternalLink className="h-4 w-4" />
                                   Open Project

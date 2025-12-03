@@ -21,6 +21,7 @@ import {
   X,
   Globe,
   ExternalLink,
+  StopCircle,
 } from 'lucide-react';
 import type { Team } from '@/services/types';
 import {
@@ -37,9 +38,11 @@ import {
 } from '@/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { projectKeys } from '@/hooks/useProjects';
+import { teamKeys } from '@/hooks/useTeams';
 import type { ParsedLogLine } from '@/services/projects';
 import { useAuth } from '@/hooks/useAuth';
 import { services } from '@/services';
+import { useCourseContext } from '@/components/CourseLayout';
 
 interface DashboardMainSectionProps {
   team: Team;
@@ -49,7 +52,18 @@ export default function DashboardMainSection({
   team,
 }: DashboardMainSectionProps) {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'ADMIN';
+  // Get effectiveRole from CourseContext if available (respects student view toggle)
+  // This will be undefined if not in a course context (e.g., standalone dashboard)
+  let effectiveRole: string | undefined;
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const courseContext = useCourseContext();
+    effectiveRole = courseContext?.effectiveRole;
+  } catch {
+    // Not in course context, use user role
+    effectiveRole = user?.role;
+  }
+  const isAdmin = effectiveRole === 'ADMIN';
   const [githubUrl, setGithubUrl] = useState('');
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -61,6 +75,8 @@ export default function DashboardMainSection({
   const [isBuildingOldJson, setIsBuildingOldJson] = useState(false);
   const [isBuildingOldSql, setIsBuildingOldSql] = useState(false);
   const [oldBuildError, setOldBuildError] = useState<string | null>(null);
+  const [isStopping, setIsStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const buildLogsRef = useRef<HTMLDivElement | null>(null);
   const containerLogsRef = useRef<HTMLDivElement | null>(null);
@@ -79,6 +95,17 @@ export default function DashboardMainSection({
       });
       queryClient.setQueryData(projectKeys.detail(project.id), project);
       queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+      // Invalidate teams queries since teams include projects
+      if (team.courseOfferingId) {
+        queryClient.invalidateQueries({
+          queryKey: teamKeys.listByOffering(team.courseOfferingId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
     },
   });
 
@@ -224,6 +251,21 @@ export default function DashboardMainSection({
     // Auto-open build logs when deployment starts
     setIsBuildLogsOpen(true);
 
+    // Optimistically update project status to "building" if there's a latest project
+    if (latestProject) {
+      queryClient.setQueryData(projectKeys.detail(latestProject.id), {
+        ...latestProject,
+        status: 'building',
+      });
+      // Also update in the team projects list
+      queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.map((p: any) =>
+          p.id === latestProject.id ? { ...p, status: 'building' } : p
+        );
+      });
+    }
+
     try {
       await streamingDeploy.deploy({
         githubUrl: githubUrl.trim(),
@@ -268,12 +310,64 @@ export default function DashboardMainSection({
     setOldBuildError(null);
     setIsBuildingOldJson(true);
 
+    // Optimistically update project status to "building" if there's a latest project
+    if (latestProject) {
+      queryClient.setQueryData(projectKeys.detail(latestProject.id), {
+        ...latestProject,
+        status: 'building',
+      });
+      // Also update in the team projects list
+      queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.map((p: any) =>
+          p.id === latestProject.id ? { ...p, status: 'building' } : p
+        );
+      });
+      // Also update in teams lists (for CourseProjects page)
+      if (team.courseOfferingId) {
+        queryClient.setQueryData(
+          teamKeys.listByOffering(team.courseOfferingId),
+          (old: any) => {
+            if (!old || !Array.isArray(old)) return old;
+            return old.map((t: any) => {
+              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
+                return {
+                  ...t,
+                  projects: t.projects.map((p: any) =>
+                    p.id === latestProject.id ? { ...p, status: 'building' } : p
+                  ),
+                };
+              }
+              return t;
+            });
+          }
+        );
+        queryClient.setQueryData(
+          teamKeys.listMyByOffering(team.courseOfferingId),
+          (old: any) => {
+            if (!old || !Array.isArray(old)) return old;
+            return old.map((t: any) => {
+              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
+                return {
+                  ...t,
+                  projects: t.projects.map((p: any) =>
+                    p.id === latestProject.id ? { ...p, status: 'building' } : p
+                  ),
+                };
+              }
+              return t;
+            });
+          }
+        );
+      }
+    }
+
     try {
       const response = await services.projects.buildOldJson({
         githubUrl: githubUrl.trim(),
         teamId: team.id,
       });
-      
+
       if (response.data) {
         // Invalidate queries to refresh the project list
         queryClient.invalidateQueries({
@@ -284,7 +378,18 @@ export default function DashboardMainSection({
           response.data
         );
         queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
-        
+        queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+        // Invalidate teams queries since teams include projects
+        if (team.courseOfferingId) {
+          queryClient.invalidateQueries({
+            queryKey: teamKeys.listByOffering(team.courseOfferingId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+
         setDeploymentSuccess('Old JSON project built successfully!');
         setTimeout(() => setDeploymentSuccess(null), 5000);
       }
@@ -312,12 +417,64 @@ export default function DashboardMainSection({
     setOldBuildError(null);
     setIsBuildingOldSql(true);
 
+    // Optimistically update project status to "building" if there's a latest project
+    if (latestProject) {
+      queryClient.setQueryData(projectKeys.detail(latestProject.id), {
+        ...latestProject,
+        status: 'building',
+      });
+      // Also update in the team projects list
+      queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.map((p: any) =>
+          p.id === latestProject.id ? { ...p, status: 'building' } : p
+        );
+      });
+      // Also update in teams lists (for CourseProjects page)
+      if (team.courseOfferingId) {
+        queryClient.setQueryData(
+          teamKeys.listByOffering(team.courseOfferingId),
+          (old: any) => {
+            if (!old || !Array.isArray(old)) return old;
+            return old.map((t: any) => {
+              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
+                return {
+                  ...t,
+                  projects: t.projects.map((p: any) =>
+                    p.id === latestProject.id ? { ...p, status: 'building' } : p
+                  ),
+                };
+              }
+              return t;
+            });
+          }
+        );
+        queryClient.setQueryData(
+          teamKeys.listMyByOffering(team.courseOfferingId),
+          (old: any) => {
+            if (!old || !Array.isArray(old)) return old;
+            return old.map((t: any) => {
+              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
+                return {
+                  ...t,
+                  projects: t.projects.map((p: any) =>
+                    p.id === latestProject.id ? { ...p, status: 'building' } : p
+                  ),
+                };
+              }
+              return t;
+            });
+          }
+        );
+      }
+    }
+
     try {
       const response = await services.projects.buildOldSql({
         githubUrl: githubUrl.trim(),
         teamId: team.id,
       });
-      
+
       if (response.data) {
         // Invalidate queries to refresh the project list
         queryClient.invalidateQueries({
@@ -328,7 +485,18 @@ export default function DashboardMainSection({
           response.data
         );
         queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
-        
+        queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+        // Invalidate teams queries since teams include projects
+        if (team.courseOfferingId) {
+          queryClient.invalidateQueries({
+            queryKey: teamKeys.listByOffering(team.courseOfferingId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+
         setDeploymentSuccess('Old SQL project built successfully!');
         setTimeout(() => setDeploymentSuccess(null), 5000);
       }
@@ -344,34 +512,93 @@ export default function DashboardMainSection({
     }
   };
 
+  const handleStopProject = async () => {
+    if (!latestProject || isStopping) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Are you sure you want to stop this project? The container will be stopped.'
+    );
+    if (!confirmed) return;
+
+    setStopError(null);
+    setIsStopping(true);
+
+    try {
+      await services.projects.stop(latestProject.id);
+
+      // Invalidate queries to refresh the project list
+      queryClient.invalidateQueries({
+        queryKey: projectKeys.listByTeam(team.id),
+      });
+      queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
+      queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: projectKeys.detail(latestProject.id),
+      });
+      // Invalidate teams queries since teams include projects
+      if (team.courseOfferingId) {
+        queryClient.invalidateQueries({
+          queryKey: teamKeys.listByOffering(team.courseOfferingId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+
+      setDeploymentSuccess('Project stopped successfully!');
+      setTimeout(() => setDeploymentSuccess(null), 5000);
+    } catch (error) {
+      console.error('Stop project failed:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Failed to stop project. Please try again.';
+      setStopError(errorMessage);
+    } finally {
+      setIsStopping(false);
+    }
+  };
+
+  // Check if the project can be stopped (is running)
+  const canStopProject =
+    latestProject &&
+    latestProject.status === 'running' &&
+    !latestProject.stoppedAt;
+
   // Determine status from latest project (first entry in projects array)
   // Map API status values to badge status values
   const getProjectStatus = () => {
-    if (!latestProject) return 'ready';
+    // If deployment or build is in progress, show building status
+    if (isDeploying || isBuildingOldJson || isBuildingOldSql) {
+      return 'building';
+    }
 
-    // If container is stopped, show ready
-    if (latestProject.stoppedAt) return 'ready';
+    if (!latestProject) return 'none';
 
     // Map API status to badge status
     if (latestProject.status) {
       const statusLower = latestProject.status.toLowerCase();
 
       // Handle various status values from API
+      if (statusLower === 'stopped') return 'stopped';
+      if (statusLower === 'pruned') return 'pruned';
       if (statusLower === 'failed' || statusLower === 'error') return 'error';
       if (statusLower === 'building' || statusLower === 'queued')
         return 'building';
-      if (
-        statusLower === 'running' ||
-        statusLower === 'ready' ||
-        statusLower === 'success'
-      )
-        return 'ready';
+      if (statusLower === 'running') return 'running';
+      if (statusLower === 'ready' || statusLower === 'success') return 'ready';
 
-      // Default to ready for unknown statuses
-      return 'ready';
+      // Default to the status as-is for unknown statuses
+      return statusLower;
     }
 
-    return 'ready';
+    // If no status but has stoppedAt, show stopped
+    if (latestProject.stoppedAt) return 'stopped';
+
+    return 'none';
   };
 
   const projectStatus = getProjectStatus();
@@ -383,32 +610,65 @@ export default function DashboardMainSection({
           <div className="flex items-center gap-3">
             {getStatusBadge(projectStatus)}
             <h1 className="text-3xl font-bold text-gray-900">{team.name}</h1>
-            {(() => {
-              // Get project URL using the same method as CourseProjects page
-              const siteUrl = import.meta.env.VITE_SITE_URL || window.location.hostname;
-              const rawName =
-                latestProject?.containerName?.replace(/^\//, '') || team.name;
-              
-              // Format: {container-name}.{site_URL}
-              // Remove slashes/spaces and convert to lowercase for URL
-              const sanitizedName = rawName.toLowerCase().replace(/[^a-z0-9-]/g, '');
-              const projectUrl = `https://${sanitizedName}.${siteUrl}`;
-              
-              return (
+            <div className="flex items-center gap-2 ml-auto">
+              {(() => {
+                // Get project URL using the same method as CourseProjects page
+                const siteUrl =
+                  import.meta.env.VITE_SITE_URL || window.location.hostname;
+                const rawName =
+                  latestProject?.containerName?.replace(/^\//, '') || team.name;
+
+                // Format: {container-name}.{site_URL}
+                // Remove slashes/spaces and convert to lowercase for URL
+                const sanitizedName = rawName
+                  .toLowerCase()
+                  .replace(/[^a-z0-9-]/g, '');
+                const projectUrl = `https://${sanitizedName}.${siteUrl}`;
+
+                const isReady = projectStatus === 'ready';
+
+                return (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      window.open(projectUrl, '_blank', 'noopener,noreferrer');
+                    }}
+                    disabled={!isReady}
+                    className={`flex items-center gap-2 ${
+                      !isReady
+                        ? 'opacity-50 cursor-not-allowed text-gray-500'
+                        : ''
+                    }`}
+                  >
+                    <Globe className="h-4 w-4" />
+                    <span>Open Project</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </Button>
+                );
+              })()}
+              {canStopProject && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    window.open(projectUrl, '_blank', 'noopener,noreferrer');
-                  }}
-                  className="flex items-center gap-2 ml-auto"
+                  onClick={handleStopProject}
+                  disabled={isStopping}
+                  className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700"
                 >
-                  <Globe className="h-4 w-4" />
-                  <span>Open Project</span>
-                  <ExternalLink className="h-3 w-3" />
+                  {isStopping ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Stopping...</span>
+                    </>
+                  ) : (
+                    <>
+                      <StopCircle className="h-4 w-4" />
+                      <span>Stop Project</span>
+                    </>
+                  )}
                 </Button>
-              );
-            })()}
+              )}
+            </div>
           </div>
           <div className="space-y-2">
             {(() => {
@@ -442,7 +702,12 @@ export default function DashboardMainSection({
                 />
                 <Button
                   onClick={handleDeploy}
-                  disabled={isDeploying || isBuildingOldJson || isBuildingOldSql || !githubUrl.trim()}
+                  disabled={
+                    isDeploying ||
+                    isBuildingOldJson ||
+                    isBuildingOldSql ||
+                    !githubUrl.trim()
+                  }
                   className="bg-black hover:bg-gray-800 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   aria-busy={isDeploying}
                 >
@@ -459,7 +724,12 @@ export default function DashboardMainSection({
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
-                        disabled={isDeploying || isBuildingOldJson || isBuildingOldSql || !githubUrl.trim()}
+                        disabled={
+                          isDeploying ||
+                          isBuildingOldJson ||
+                          isBuildingOldSql ||
+                          !githubUrl.trim()
+                        }
                         className="bg-gray-600 hover:bg-gray-700 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                       >
                         Alternative Build
@@ -469,7 +739,12 @@ export default function DashboardMainSection({
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem
                         onClick={handleBuildOldJson}
-                        disabled={isDeploying || isBuildingOldJson || isBuildingOldSql || !githubUrl.trim()}
+                        disabled={
+                          isDeploying ||
+                          isBuildingOldJson ||
+                          isBuildingOldSql ||
+                          !githubUrl.trim()
+                        }
                         className="cursor-pointer"
                       >
                         {isBuildingOldJson ? (
@@ -483,7 +758,12 @@ export default function DashboardMainSection({
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         onClick={handleBuildOldSql}
-                        disabled={isDeploying || isBuildingOldJson || isBuildingOldSql || !githubUrl.trim()}
+                        disabled={
+                          isDeploying ||
+                          isBuildingOldJson ||
+                          isBuildingOldSql ||
+                          !githubUrl.trim()
+                        }
                         className="cursor-pointer"
                       >
                         {isBuildingOldSql ? (
@@ -561,6 +841,12 @@ export default function DashboardMainSection({
               <div className="flex items-center gap-2 text-red-600 text-sm">
                 <AlertCircle className="h-4 w-4" />
                 <span>{oldBuildError}</span>
+              </div>
+            )}
+            {stopError && (
+              <div className="flex items-center gap-2 text-red-600 text-sm">
+                <AlertCircle className="h-4 w-4" />
+                <span>{stopError}</span>
               </div>
             )}
           </div>
@@ -746,7 +1032,8 @@ export default function DashboardMainSection({
                               <div className="flex flex-col items-start text-left">
                                 <span className="text-sm text-gray-900 text-left">
                                   <span className="font-medium">
-                                    {project.deployedBy?.email ||
+                                    {(project.deployedBy as any)?.name ||
+                                      project.deployedBy?.email ||
                                       'Unknown user'}
                                   </span>{' '}
                                   deployed{' '}

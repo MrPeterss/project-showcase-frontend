@@ -44,7 +44,17 @@ export default function DashboardSideBarSection({
             {team.members && team.members.length > 0 ? (
               team.members.map((member) => {
                 const user = member.user;
-                const initials = user?.email
+                // Use name if available, otherwise use email
+                const displayName = (user as any)?.name || user?.email || `User ${member.userId}`;
+                // Generate initials from name or email
+                const initials = (user as any)?.name
+                  ? (user as any).name
+                      .split(' ')
+                      .map((n: string) => n[0])
+                      .join('')
+                      .toUpperCase()
+                      .slice(0, 2)
+                  : user?.email
                   ? user.email
                       .split('@')[0]
                       .split('.')
@@ -63,7 +73,7 @@ export default function DashboardSideBarSection({
                     </Avatar>
                     <div className="flex-1">
                       <p className="font-medium text-sm text-gray-900">
-                        {user?.email || `User ${member.userId}`}
+                        {displayName}
                       </p>
                     </div>
                   </div>
