@@ -67,6 +67,7 @@ export default function CourseSettings() {
   const [lockProjectServer, setLockProjectServer] = useState(false);
   const [enrollmentInput, setEnrollmentInput] = useState('');
   const [showAddEnrollments, setShowAddEnrollments] = useState(false);
+  const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
   const [selectedViewableOfferings, setSelectedViewableOfferings] = useState<
     number[]
   >([]);
@@ -180,15 +181,56 @@ export default function CourseSettings() {
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = event.target.files?.[0];
-    if (!file || !offering) return;
+    if (!file || !offering) {
+      // Reset file input
+      event.target.value = '';
+      return;
+    }
+
+    // Reset file input
+    event.target.value = '';
 
     try {
       const text = await file.text();
+      if (!text.trim()) {
+        setEnrollmentError('CSV file is empty.');
+        return;
+      }
+
       const enrollments = parseEnrollmentInput(text);
-      await addEnrollments(enrollments);
-    } catch (error) {
+
+      // Validate that we have at least one valid email
+      const validEnrollments = enrollments.filter(
+        (e) => e.email.trim().length > 0
+      );
+      if (validEnrollments.length === 0) {
+        setEnrollmentError(
+          'CSV file does not contain any valid email addresses.'
+        );
+        return;
+      }
+
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const invalidEmails = validEnrollments.filter(
+        (e) => !emailRegex.test(e.email)
+      );
+      if (invalidEmails.length > 0) {
+        setEnrollmentError(
+          `Invalid email addresses in CSV: ${invalidEmails
+            .map((e) => e.email)
+            .join(', ')}`
+        );
+        return;
+      }
+
+      setEnrollmentError(null);
+      await addEnrollments(validEnrollments);
+    } catch (error: any) {
       console.error('Error processing CSV file:', error);
-      // TODO: Show error message to user
+      const errorMessage =
+        error?.message || 'Failed to read CSV file. Please try again.';
+      setEnrollmentError(errorMessage);
     }
   };
 
@@ -225,72 +267,168 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
     if (!offering || !offeringId) return;
 
     try {
-      // Create enrollments using React Query mutation
-      // Default role to STUDENT if not provided
-      const enrollmentData = {
-        enrollments: enrollments.map((e) => {
-          const enrollment: {
-            email: string;
-            role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER';
-            name?: string;
-          } = {
-            email: e.email,
-            role: e.role || 'STUDENT',
-          };
-          if (e.name) {
-            enrollment.name = e.name;
-          }
-          return enrollment;
-        }),
-      };
+      // First, deduplicate enrollments by email (keep first occurrence)
+      // Also collect team memberships separately to handle same person in multiple teams
+      const enrollmentMap = new Map<
+        string,
+        {
+          email: string;
+          role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER';
+          name?: string;
+        }
+      >();
 
-      await createEnrollments.mutateAsync({
-        offeringId: offering.id,
-        data: enrollmentData,
-      });
+      // Map to track which emails belong to which teams
+      // This allows the same person to be in multiple teams
+      const teamsMap = new Map<string, Set<string>>();
 
-      // Group students by team and create/update teams
-      // Only create teams for STUDENT enrollments with team names
-      const teamsMap = new Map<string, string[]>();
       enrollments.forEach((enrollment) => {
+        const email = enrollment.email.toLowerCase();
+
+        // Only add enrollment if we haven't seen this email before
+        if (!enrollmentMap.has(email)) {
+          enrollmentMap.set(email, {
+            email: enrollment.email, // Keep original case for display
+            role: enrollment.role || 'STUDENT',
+            name: enrollment.name,
+          });
+        }
+
+        // Collect team memberships (allows duplicates - same person, multiple teams)
         if (
           enrollment.teamName &&
           (!enrollment.role || enrollment.role === 'STUDENT')
         ) {
           const teamName = enrollment.teamName;
           if (!teamsMap.has(teamName)) {
-            teamsMap.set(teamName, []);
+            teamsMap.set(teamName, new Set());
           }
-          teamsMap.get(teamName)!.push(enrollment.email);
+          // Use lowercase email for deduplication within a team
+          teamsMap.get(teamName)!.add(email);
         }
       });
 
-      // Create or update teams
-      for (const [teamName, memberEmails] of teamsMap.entries()) {
+      // Create enrollments (deduplicated)
+      const enrollmentData = {
+        enrollments: Array.from(enrollmentMap.values()),
+      };
+
+      let enrollmentErrorMessage = '';
+
+      try {
+        await createEnrollments.mutateAsync({
+          offeringId: offering.id,
+          data: enrollmentData,
+        });
+      } catch (error: any) {
+        // Handle 409 Conflict (user already enrolled) - this is okay, continue with team creation
+        if (error?.response?.status === 409) {
+          // Treat as success, users are already enrolled - continue with team creation
+          const conflictMessage =
+            error?.response?.data?.message ||
+            'Some users were already enrolled';
+          enrollmentErrorMessage = conflictMessage;
+        } else {
+          // For other errors, show error and stop
+          const errorMessage =
+            error?.response?.data?.message ||
+            error?.message ||
+            'Failed to create enrollments. Please try again.';
+          setEnrollmentError(errorMessage);
+          console.error('Error adding enrollments:', error);
+          return; // Don't proceed with team creation if enrollment failed
+        }
+      }
+
+      // Create or update teams with all members (handles same person in multiple teams)
+      const teamErrors: string[] = [];
+      for (const [teamName, memberEmailSet] of teamsMap.entries()) {
         try {
+          // Convert Set to array - need to get original email case from enrollmentMap
+          const memberEmails = Array.from(memberEmailSet).map((emailLower) => {
+            // Find original email case from enrollmentMap
+            const enrollment = enrollmentMap.get(emailLower);
+            return enrollment?.email || emailLower;
+          });
+
           await services.teams.create(offering.id, {
             name: teamName,
             memberEmails,
             courseOfferingId: offering.id,
           });
-        } catch (error) {
+        } catch (error: any) {
           console.error(`Error creating team ${teamName}:`, error);
-          // TODO: Show error message to user
+          const errorMessage =
+            error?.response?.data?.message ||
+            error?.message ||
+            `Failed to create team ${teamName}`;
+          teamErrors.push(`Team "${teamName}": ${errorMessage}`);
         }
       }
 
+      // Show success/error messages
+      if (teamErrors.length > 0) {
+        const message = [
+          enrollmentErrorMessage
+            ? `Enrollments: ${enrollmentErrorMessage}`
+            : 'Enrollments created successfully',
+          'Team creation errors:',
+          ...teamErrors,
+        ].join('\n');
+        alert(message);
+      } else if (enrollmentErrorMessage) {
+        alert(
+          `Enrollments: ${enrollmentErrorMessage}\n\nTeams created successfully.`
+        );
+      } else {
+        alert('Members added successfully!');
+      }
+
       setEnrollmentInput('');
+      setEnrollmentError(null);
       setShowAddEnrollments(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding enrollments:', error);
-      // TODO: Show error message to user
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to add members. Please try again.';
+      setEnrollmentError(errorMessage);
     }
   };
 
   const handleAddEnrollments = () => {
-    if (!enrollmentInput.trim()) return;
+    if (!enrollmentInput.trim()) {
+      setEnrollmentError('Please enter at least one enrollment.');
+      return;
+    }
     const enrollments = parseEnrollmentInput(enrollmentInput);
-    addEnrollments(enrollments);
+
+    // Validate that we have at least one valid email
+    const validEnrollments = enrollments.filter(
+      (e) => e.email.trim().length > 0
+    );
+    if (validEnrollments.length === 0) {
+      setEnrollmentError('Please enter at least one valid email address.');
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const invalidEmails = validEnrollments.filter(
+      (e) => !emailRegex.test(e.email)
+    );
+    if (invalidEmails.length > 0) {
+      setEnrollmentError(
+        `Invalid email addresses: ${invalidEmails
+          .map((e) => e.email)
+          .join(', ')}`
+      );
+      return;
+    }
+
+    setEnrollmentError(null);
+    addEnrollments(validEnrollments);
   };
 
   const handleRemoveEnrollment = async (userId: number) => {
@@ -697,9 +835,10 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                     />
                     <Button
                       variant="outline"
-                      onClick={() =>
-                        document.getElementById('csv-upload')?.click()
-                      }
+                      onClick={() => {
+                        setEnrollmentError(null); // Clear previous errors
+                        document.getElementById('csv-upload')?.click();
+                      }}
                       className="flex items-center gap-2"
                     >
                       <Upload className="h-4 w-4" />
@@ -718,6 +857,11 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                       email)
                     </span>
                   </div>
+                  {enrollmentError && !showAddEnrollments && (
+                    <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                      {enrollmentError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Divider */}
@@ -749,7 +893,10 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                         </label>
                         <textarea
                           value={enrollmentInput}
-                          onChange={(e) => setEnrollmentInput(e.target.value)}
+                          onChange={(e) => {
+                            setEnrollmentInput(e.target.value);
+                            setEnrollmentError(null); // Clear error when user types
+                          }}
                           placeholder="pjb294@cornell.edu,,,&#10;pjb294@cornell.edu, INSTRUCTOR,,&#10;pjb294@cornell.edu,,Peter Bidoshi,&#10;pjb294@cornell.edu,,,Team 3&#10;student1@cornell.edu, STUDENT, John Doe, Team A"
                           className="w-full h-32 p-3 border rounded-md text-sm"
                         />
@@ -758,6 +905,11 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                           except email). Leave fields blank between commas to
                           skip them. Default role is STUDENT.
                         </p>
+                        {enrollmentError && (
+                          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                            {enrollmentError}
+                          </div>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         <Button onClick={handleAddEnrollments} size="sm">
@@ -765,7 +917,10 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                         </Button>
                         <Button
                           variant="outline"
-                          onClick={() => setShowAddEnrollments(false)}
+                          onClick={() => {
+                            setShowAddEnrollments(false);
+                            setEnrollmentError(null);
+                          }}
                           size="sm"
                         >
                           Cancel

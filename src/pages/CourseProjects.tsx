@@ -200,13 +200,11 @@ export default function CourseProjects() {
     // Prefer container name from the latest project when available
     const latestProject =
       team.projects && team.projects.length > 0 ? team.projects[0] : null;
-    const rawName =
+    const containerName =
       latestProject?.containerName?.replace(/^\//, '') || team.name;
 
     // Format: {container-name}.{site_URL}
-    // Remove slashes/spaces and convert to lowercase for URL
-    const sanitizedName = rawName.toLowerCase().replace(/[^a-z0-9-]/g, '');
-    return `https://${sanitizedName}.${siteUrl}`;
+    return `https://${containerName}.${siteUrl}`;
   };
 
   const loading = offeringLoading || teamsLoading;

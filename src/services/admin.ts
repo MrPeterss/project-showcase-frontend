@@ -77,6 +77,21 @@ export interface PruneResponse {
   result: PruneResult
 }
 
+export interface MigrateProjectData {
+  projectName: string // Docker container name (e.g., "teamname_backend_flask_app")
+  teamId: number
+  githubUrl?: string // Optional: GitHub repository URL
+}
+
+export interface MigrateProjectResponse {
+  message: string // "Project migrated successfully" | "Project updated successfully"
+  alias: string // The assigned network alias
+  project: AdminProject // Project object with team info
+  containerId: string
+  containerName: string
+  ports: Record<string, any> // Port mappings
+}
+
 export const adminServices = {
   // Get all projects organized by team
   getProjects: (): Promise<ApiResponse<ProjectsResponse>> =>
@@ -106,6 +121,12 @@ export const adminServices = {
       }
     }>
   > => api.put(`/admin/users/${userId}/name`, { name }),
+
+  // Migrate old project to new method (admin only)
+  migrateProject: (
+    data: MigrateProjectData
+  ): Promise<ApiResponse<MigrateProjectResponse>> =>
+    api.post('/admin/projects/migrate', data),
 }
 
 export default adminServices

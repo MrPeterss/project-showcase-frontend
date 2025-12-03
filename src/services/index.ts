@@ -50,6 +50,8 @@ export type {
   AdminProject,
   ProjectDataFile,
   PruneProjectResponse,
+  MigrateProjectData,
+  MigrateProjectResponse,
 } from './admin'
 
 import authServices from './auth'

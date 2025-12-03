@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import { Card } from '@/components/ui/card';
+import { Modal, ModalFooter } from '@/components/ui/modal';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,9 +75,13 @@ export default function DashboardMainSection({
   );
   const [isBuildingOldJson, setIsBuildingOldJson] = useState(false);
   const [isBuildingOldSql, setIsBuildingOldSql] = useState(false);
+  const [isMigrating, setIsMigrating] = useState(false);
   const [oldBuildError, setOldBuildError] = useState<string | null>(null);
+  const [migrationError, setMigrationError] = useState<string | null>(null);
   const [isStopping, setIsStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
+  const [showMigrationModal, setShowMigrationModal] = useState(false);
+  const [migrationGithubUrl, setMigrationGithubUrl] = useState('');
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const buildLogsRef = useRef<HTMLDivElement | null>(null);
   const containerLogsRef = useRef<HTMLDivElement | null>(null);
@@ -96,6 +101,8 @@ export default function DashboardMainSection({
       queryClient.setQueryData(projectKeys.detail(project.id), project);
       queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
       queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+      // Invalidate all project queries to ensure projects page updates
+      queryClient.invalidateQueries({ queryKey: projectKeys.all });
       // Invalidate teams queries since teams include projects
       if (team.courseOfferingId) {
         queryClient.invalidateQueries({
@@ -299,7 +306,7 @@ export default function DashboardMainSection({
   };
 
   const handleBuildOldJson = async () => {
-    if (isBuildingOldJson || isBuildingOldSql || isDeploying) {
+    if (isBuildingOldJson || isBuildingOldSql || isDeploying || isMigrating) {
       return;
     }
 
@@ -379,6 +386,8 @@ export default function DashboardMainSection({
         );
         queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
         queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+        // Invalidate all project queries to ensure projects page updates
+        queryClient.invalidateQueries({ queryKey: projectKeys.all });
         // Invalidate teams queries since teams include projects
         if (team.courseOfferingId) {
           queryClient.invalidateQueries({
@@ -405,8 +414,177 @@ export default function DashboardMainSection({
     }
   };
 
+  const handleMigrateProject = () => {
+    if (isBuildingOldJson || isBuildingOldSql || isDeploying || isMigrating) {
+      return;
+    }
+
+    if (!githubUrl.trim()) {
+      return;
+    }
+
+    // Reset modal state and show the GitHub URL modal
+    setMigrationGithubUrl('');
+    setMigrationError(null);
+    setShowMigrationModal(true);
+  };
+
+  const handleMigrationModalSubmit = async () => {
+    if (!githubUrl.trim()) {
+      return;
+    }
+
+    // Extract projectName from the input field
+    // The user enters the Docker container name (e.g., "teamname_backend_flask_app")
+    // in the GitHub URL input field
+    const projectName = githubUrl.trim();
+
+    // Validate GitHub URL if provided (it's optional, but if provided should be valid)
+    let finalGithubUrl: string | undefined =
+      migrationGithubUrl.trim() || undefined;
+    if (finalGithubUrl) {
+      const githubUrlPattern =
+        /^https:\/\/github\.com\/[\w\-\.]+\/[\w\-\.]+(\/)?$/;
+      if (!githubUrlPattern.test(finalGithubUrl)) {
+        setMigrationError(
+          'Invalid GitHub URL format. Please use: https://github.com/username/repository'
+        );
+        return;
+      }
+    }
+
+    // Close the modal
+    setShowMigrationModal(false);
+
+    // Show warning confirmation dialog
+    const confirmed = window.confirm(
+      '⚠️ WARNING: Project Migration\n\n' +
+        'This action is IRREVERSIBLE and may have unintended side effects:\n\n' +
+        '• The Docker container will be connected to the projects network\n' +
+        '• A new project entry will be created or updated in the database\n' +
+        '• The container will remain on its original network (multi-network)\n' +
+        '• This cannot be undone\n\n' +
+        'Are you sure you want to proceed with migrating this project?'
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMigrationError(null);
+    setIsMigrating(true);
+
+    // Optimistically update project status to "building" if there's a latest project
+    if (latestProject) {
+      queryClient.setQueryData(projectKeys.detail(latestProject.id), {
+        ...latestProject,
+        status: 'building',
+      });
+      // Also update in the team projects list
+      queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
+        if (!old || !Array.isArray(old)) return old;
+        return old.map((p: any) =>
+          p.id === latestProject.id ? { ...p, status: 'building' } : p
+        );
+      });
+      // Also update in teams lists (for CourseProjects page)
+      if (team.courseOfferingId) {
+        queryClient.setQueryData(
+          teamKeys.listByOffering(team.courseOfferingId),
+          (old: any) => {
+            if (!old || !Array.isArray(old)) return old;
+            return old.map((t: any) => {
+              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
+                return {
+                  ...t,
+                  projects: t.projects.map((p: any) =>
+                    p.id === latestProject.id ? { ...p, status: 'building' } : p
+                  ),
+                };
+              }
+              return t;
+            });
+          }
+        );
+        queryClient.setQueryData(
+          teamKeys.listMyByOffering(team.courseOfferingId),
+          (old: any) => {
+            if (!old || !Array.isArray(old)) return old;
+            return old.map((t: any) => {
+              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
+                return {
+                  ...t,
+                  projects: t.projects.map((p: any) =>
+                    p.id === latestProject.id ? { ...p, status: 'building' } : p
+                  ),
+                };
+              }
+              return t;
+            });
+          }
+        );
+      }
+    }
+
+    try {
+      const response = await services.admin.migrateProject({
+        projectName: projectName,
+        teamId: team.id,
+        githubUrl: finalGithubUrl,
+      });
+
+      if (response.data) {
+        // Invalidate queries to refresh the project list
+        queryClient.invalidateQueries({
+          queryKey: projectKeys.listByTeam(team.id),
+        });
+        if (response.data.project) {
+          queryClient.setQueryData(
+            projectKeys.detail(response.data.project.id),
+            response.data.project
+          );
+        }
+        queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
+        queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+        // Invalidate all project queries to ensure projects page updates
+        queryClient.invalidateQueries({ queryKey: projectKeys.all });
+        // Invalidate teams queries since teams include projects
+        if (team.courseOfferingId) {
+          queryClient.invalidateQueries({
+            queryKey: teamKeys.listByOffering(team.courseOfferingId),
+          });
+          queryClient.invalidateQueries({
+            queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+
+        setDeploymentSuccess(
+          response.data.message || 'Project migrated successfully!'
+        );
+        setTimeout(() => setDeploymentSuccess(null), 5000);
+        setGithubUrl(''); // Clear input on success
+      }
+    } catch (error) {
+      console.error('Project migration failed:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Project migration failed. Please try again.';
+      setMigrationError(errorMessage);
+    } finally {
+      setIsMigrating(false);
+    }
+  };
+
+  const handleMigrationModalCancel = () => {
+    setShowMigrationModal(false);
+    setMigrationGithubUrl('');
+    setMigrationError(null);
+  };
+
   const handleBuildOldSql = async () => {
-    if (isBuildingOldJson || isBuildingOldSql || isDeploying) {
+    if (isBuildingOldJson || isBuildingOldSql || isDeploying || isMigrating) {
       return;
     }
 
@@ -486,6 +664,8 @@ export default function DashboardMainSection({
         );
         queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
         queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+        // Invalidate all project queries to ensure projects page updates
+        queryClient.invalidateQueries({ queryKey: projectKeys.all });
         // Invalidate teams queries since teams include projects
         if (team.courseOfferingId) {
           queryClient.invalidateQueries({
@@ -572,7 +752,7 @@ export default function DashboardMainSection({
   // Map API status values to badge status values
   const getProjectStatus = () => {
     // If deployment or build is in progress, show building status
-    if (isDeploying || isBuildingOldJson || isBuildingOldSql) {
+    if (isDeploying || isBuildingOldJson || isBuildingOldSql || isMigrating) {
       return 'building';
     }
 
@@ -612,18 +792,16 @@ export default function DashboardMainSection({
             <h1 className="text-3xl font-bold text-gray-900">{team.name}</h1>
             <div className="flex items-center gap-2 ml-auto">
               {(() => {
-                // Get project URL using the same method as CourseProjects page
+                // Get project URL using the container name as-is (containers are accessed by their network name)
                 const siteUrl =
                   import.meta.env.VITE_SITE_URL || window.location.hostname;
-                const rawName =
+                // Remove leading slash if present, otherwise use container name as-is
+                const containerName =
                   latestProject?.containerName?.replace(/^\//, '') || team.name;
 
                 // Format: {container-name}.{site_URL}
-                // Remove slashes/spaces and convert to lowercase for URL
-                const sanitizedName = rawName
-                  .toLowerCase()
-                  .replace(/[^a-z0-9-]/g, '');
-                const projectUrl = `https://${sanitizedName}.${siteUrl}`;
+                // Use container name directly (no sanitization needed for network access)
+                const projectUrl = `https://${containerName}.${siteUrl}`;
 
                 const isRunning = projectStatus === 'running';
 
@@ -696,9 +874,9 @@ export default function DashboardMainSection({
                   value={githubUrl}
                   onChange={(e) => setGithubUrl(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="add a GitHub url here..."
+                  placeholder="add a GitHub URL..."
                   className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={isDeploying}
+                  disabled={isDeploying || isMigrating}
                 />
                 <Button
                   onClick={handleDeploy}
@@ -706,6 +884,7 @@ export default function DashboardMainSection({
                     isDeploying ||
                     isBuildingOldJson ||
                     isBuildingOldSql ||
+                    isMigrating ||
                     !githubUrl.trim()
                   }
                   className="bg-black hover:bg-gray-800 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -728,6 +907,7 @@ export default function DashboardMainSection({
                           isDeploying ||
                           isBuildingOldJson ||
                           isBuildingOldSql ||
+                          isMigrating ||
                           !githubUrl.trim()
                         }
                         className="bg-gray-600 hover:bg-gray-700 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -743,6 +923,7 @@ export default function DashboardMainSection({
                           isDeploying ||
                           isBuildingOldJson ||
                           isBuildingOldSql ||
+                          isMigrating ||
                           !githubUrl.trim()
                         }
                         className="cursor-pointer"
@@ -762,6 +943,7 @@ export default function DashboardMainSection({
                           isDeploying ||
                           isBuildingOldJson ||
                           isBuildingOldSql ||
+                          isMigrating ||
                           !githubUrl.trim()
                         }
                         className="cursor-pointer"
@@ -773,6 +955,26 @@ export default function DashboardMainSection({
                           </>
                         ) : (
                           'Build Old SQL'
+                        )}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={handleMigrateProject}
+                        disabled={
+                          isDeploying ||
+                          isBuildingOldJson ||
+                          isBuildingOldSql ||
+                          isMigrating ||
+                          !githubUrl.trim()
+                        }
+                        className="cursor-pointer"
+                      >
+                        {isMigrating ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            Migrating Project...
+                          </>
+                        ) : (
+                          'Migrate Project'
                         )}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -841,6 +1043,12 @@ export default function DashboardMainSection({
               <div className="flex items-center gap-2 text-red-600 text-sm">
                 <AlertCircle className="h-4 w-4" />
                 <span>{oldBuildError}</span>
+              </div>
+            )}
+            {migrationError && (
+              <div className="flex items-center gap-2 text-red-600 text-sm">
+                <AlertCircle className="h-4 w-4" />
+                <span>{migrationError}</span>
               </div>
             )}
             {stopError && (
@@ -1067,6 +1275,70 @@ export default function DashboardMainSection({
           )}
         </Card>
       </div>
+
+      {/* Migration GitHub URL Modal */}
+      <Modal
+        isOpen={showMigrationModal}
+        onClose={handleMigrationModalCancel}
+        title="Enter GitHub Repository URL"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label
+              htmlFor="migration-github-url"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
+              GitHub Repository URL (Optional)
+            </label>
+            <input
+              type="text"
+              id="migration-github-url"
+              value={migrationGithubUrl}
+              onChange={(e) => {
+                setMigrationGithubUrl(e.target.value);
+                setMigrationError(null); // Clear error when user types
+              }}
+              placeholder="https://github.com/username/repository"
+              className="w-full p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleMigrationModalSubmit();
+                } else if (e.key === 'Escape') {
+                  handleMigrationModalCancel();
+                }
+              }}
+              autoFocus
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Enter the GitHub repository URL for this project. This field is
+              optional.
+            </p>
+          </div>
+          {migrationError && (
+            <div className="flex items-center gap-2 text-red-600 text-sm">
+              <AlertCircle className="h-4 w-4" />
+              <span>{migrationError}</span>
+            </div>
+          )}
+        </div>
+        <ModalFooter>
+          <Button
+            variant="outline"
+            onClick={handleMigrationModalCancel}
+            disabled={isMigrating}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleMigrationModalSubmit}
+            disabled={isMigrating}
+            className="bg-black hover:bg-gray-800 text-white"
+          >
+            Continue
+          </Button>
+        </ModalFooter>
+      </Modal>
     </div>
   );
 }
