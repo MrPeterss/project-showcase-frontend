@@ -1,5 +1,4 @@
 import { Badge } from '@/components/ui/badge';
-import { formatSemesterShortName } from '@/lib/semesterUtils';
 import { useNavigate } from 'react-router-dom';
 import type { CourseOffering } from '@/services';
 
@@ -8,10 +7,7 @@ interface CourseCellProps {
   isAdmin: boolean;
 }
 
-export function CourseCell({
-  offering,
-  isAdmin,
-}: CourseCellProps) {
+export function CourseCell({ offering, isAdmin }: CourseCellProps) {
   const navigate = useNavigate();
 
   const handleCourseClick = () => {
@@ -46,49 +42,29 @@ export function CourseCell({
   };
 
   return (
-    <div className="relative group">
-      <div
-        className="bg-white border border-gray-200 rounded-xl cursor-pointer hover:shadow-xl hover:border-red-300 hover:-translate-y-1 transition-all duration-300 h-full flex flex-col overflow-hidden"
-        onClick={handleCourseClick}
-      >
-        {/* Header with gradient */}
-        <div className="bg-gradient-to-br from-red-600 to-red-700 p-4 text-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-red-800/20 rounded-full -mr-16 -mt-16"></div>
-          <div className="relative z-10">
-            <h4 className="font-bold text-lg leading-tight">
-              {offering.course?.department} {offering.course?.number}
-            </h4>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 p-5 flex flex-col">
-          <p className="text-gray-700 text-sm font-medium line-clamp-3 mb-4 flex-1 leading-relaxed">
-            {offering.course?.name}
-          </p>
-
-          {/* Footer with role badge and semester badge */}
-          <div className="pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap">
-            {offering.userRole && !isAdmin && (
-              <Badge
-                variant="outline"
-                className={`text-xs font-medium ${getRoleBadgeClassName()}`}
-              >
-                {getRoleLabel()}
-              </Badge>
-            )}
-            <Badge
-              variant="outline"
-              className="text-xs font-medium border-gray-200 text-gray-600 bg-gray-50"
-            >
-              {offering.semester
-                ? formatSemesterShortName(offering.semester)
-                : `Semester ID: ${offering.semesterId}`}
-            </Badge>
-          </div>
-        </div>
+    <div
+      className="bg-white border border-gray-200 rounded-lg cursor-pointer hover:shadow-md hover:border-gray-300 transition-all duration-200 p-6 flex flex-col gap-3"
+      onClick={handleCourseClick}
+    >
+      {/* Course Code */}
+      <div className="flex items-center justify-between">
+        <h4 className="font-bold text-lg text-gray-900">
+          {offering.course?.department} {offering.course?.number}
+        </h4>
+        {offering.userRole && !isAdmin && (
+          <Badge
+            variant="outline"
+            className={`text-xs font-medium ${getRoleBadgeClassName()}`}
+          >
+            {getRoleLabel()}
+          </Badge>
+        )}
       </div>
+
+      {/* Course Name */}
+      <p className="text-gray-600 text-sm line-clamp-2 leading-relaxed">
+        {offering.course?.name}
+      </p>
     </div>
   );
 }
-

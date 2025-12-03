@@ -15,25 +15,21 @@ export function CourseOfferingsBySemester({
   isAdmin,
 }: CourseOfferingsBySemesterProps) {
   // Group courses by semester
-  const offeringsBySemester = offerings.reduce(
-    (acc, offering) => {
-      const semesterId = offering.semesterId;
-      if (!acc[semesterId]) {
-        acc[semesterId] = [];
-      }
-      acc[semesterId].push(offering);
-      return acc;
-    },
-    {} as Record<number, CourseOffering[]>
-  );
+  const offeringsBySemester = offerings.reduce((acc, offering) => {
+    const semesterId = offering.semesterId;
+    if (!acc[semesterId]) {
+      acc[semesterId] = [];
+    }
+    acc[semesterId].push(offering);
+    return acc;
+  }, {} as Record<number, CourseOffering[]>);
 
   // Sort semesters by start date (newest first)
   const sortedSemesters = semesters
     .filter((semester) => offeringsBySemester[semester.id])
     .sort(
       (a, b) =>
-        new Date(b.startDate).getTime() -
-        new Date(a.startDate).getTime()
+        new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
     );
 
   return (
@@ -47,15 +43,9 @@ export function CourseOfferingsBySemester({
           <div className="flex items-center justify-between pb-4 mb-5 border-b border-gray-200">
             <div className="flex items-center gap-3">
               <div className="w-1.5 h-8 bg-gradient-to-b from-red-600 to-red-700 rounded-full"></div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-900">
-                  {formatSemesterShortName(semester)}
-                </h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {new Date(semester.startDate).toLocaleDateString()} -{' '}
-                  {new Date(semester.endDate).toLocaleDateString()}
-                </p>
-              </div>
+              <h3 className="text-xl font-bold text-gray-900">
+                {formatSemesterShortName(semester)}
+              </h3>
             </div>
             <Badge
               variant="outline"
@@ -81,4 +71,3 @@ export function CourseOfferingsBySemester({
     </div>
   );
 }
-

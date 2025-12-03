@@ -1,4 +1,3 @@
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
 import type { Semester } from '@/services';
@@ -33,10 +32,6 @@ export function CoursesHeader({
             </span>
           )}
         </h1>
-        <Badge variant="secondary">
-          {userRole || 'Loading...'}
-          {isAdmin && ' (Admin)'}
-        </Badge>
       </div>
 
       {/* Admin Controls */}

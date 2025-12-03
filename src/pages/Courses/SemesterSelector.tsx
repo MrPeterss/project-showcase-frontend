@@ -31,6 +31,14 @@ export function SemesterSelector({
     }
   };
 
+  // Sort semesters by start date (most recent first)
+  const sortedSemesters = semesters
+    ? [...semesters].sort(
+        (a, b) =>
+          new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+      )
+    : [];
+
   return (
     <div className="flex items-center gap-2">
       <CustomSelect
@@ -38,14 +46,10 @@ export function SemesterSelector({
         onChange={onSemesterChange}
         options={[
           { value: '', label: 'All Semesters' },
-          ...(semesters?.map((semester) => ({
+          ...sortedSemesters.map((semester) => ({
             value: semester.id.toString(),
-            label: `${formatSemesterShortName(semester)} (${new Date(
-              semester.startDate
-            ).toLocaleDateString()} - ${new Date(
-              semester.endDate
-            ).toLocaleDateString()})`,
-          })) || []),
+            label: formatSemesterShortName(semester),
+          })),
         ]}
         placeholder="Select a semester"
         showAddButton={isAdmin}
