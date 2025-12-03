@@ -625,7 +625,7 @@ export default function DashboardMainSection({
                   .replace(/[^a-z0-9-]/g, '');
                 const projectUrl = `https://${sanitizedName}.${siteUrl}`;
 
-                const isReady = projectStatus === 'ready';
+                const isRunning = projectStatus === 'running';
 
                 return (
                   <Button
@@ -634,9 +634,9 @@ export default function DashboardMainSection({
                     onClick={() => {
                       window.open(projectUrl, '_blank', 'noopener,noreferrer');
                     }}
-                    disabled={!isReady}
+                    disabled={!isRunning}
                     className={`flex items-center gap-2 ${
-                      !isReady
+                      !isRunning
                         ? 'opacity-50 cursor-not-allowed text-gray-500'
                         : ''
                     }`}
