@@ -5,7 +5,6 @@ import type { Semester } from '@/services';
 interface CoursesHeaderProps {
   selectedSemesterId: string | null;
   semesters: Semester[] | null;
-  userRole?: string;
   isAdmin: boolean;
   onAddCourse: () => void;
 }
@@ -13,7 +12,6 @@ interface CoursesHeaderProps {
 export function CoursesHeader({
   selectedSemesterId,
   semesters,
-  userRole,
   isAdmin,
   onAddCourse,
 }: CoursesHeaderProps) {
@@ -24,10 +22,10 @@ export function CoursesHeader({
           Course Offerings
           {selectedSemesterId && semesters && (
             <span className="text-xl font-normal text-muted-foreground ml-3">
-              - {formatSemesterShortName(
-                semesters.find(
-                  (s) => s.id.toString() === selectedSemesterId
-                ) || null
+              -{' '}
+              {formatSemesterShortName(
+                semesters.find((s) => s.id.toString() === selectedSemesterId) ||
+                  null
               )}
             </span>
           )}
@@ -49,4 +47,3 @@ export function CoursesHeader({
     </div>
   );
 }
-

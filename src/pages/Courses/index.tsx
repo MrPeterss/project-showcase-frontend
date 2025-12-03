@@ -1,11 +1,12 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setSelectedSemesterId } from '@/store/slices/coursesSlice';
-import {
-  fetchCourseOfferings,
-} from '@/store/thunks/courseOfferingsThunks';
+import { fetchCourseOfferings } from '@/store/thunks/courseOfferingsThunks';
 import { fetchSemesters } from '@/store/thunks/semestersThunks';
-import { selectSelectedSemesterId, selectAllCourses } from '@/store/selectors/coursesSelectors';
+import {
+  selectSelectedSemesterId,
+  selectAllCourses,
+} from '@/store/selectors/coursesSelectors';
 import {
   selectCourseOfferingsBySelectedSemester,
   selectCourseOfferingsError,
@@ -72,7 +73,7 @@ export default function Courses() {
   };
 
   const handleEditCourse = (courseId: number) => {
-    const course = courses.find(c => c.id === courseId);
+    const course = courses.find((c) => c.id === courseId);
     if (course) {
       setSelectedCourse(course);
       setIsEditCourseModalOpen(true);
@@ -80,7 +81,7 @@ export default function Courses() {
   };
 
   const handleEditSemesterFromOffering = (semesterId: number) => {
-    const semester = semesters.find(s => s.id === semesterId);
+    const semester = semesters.find((s) => s.id === semesterId);
     if (semester) {
       setSelectedSemester(semester);
       setIsEditSemesterModalOpen(true);
@@ -122,7 +123,6 @@ export default function Courses() {
         <CoursesHeader
           selectedSemesterId={selectedSemesterId}
           semesters={semesters}
-          userRole={user?.role}
           isAdmin={isAdmin}
           onAddCourse={() => setIsNewCourseOfferingModalOpen(true)}
         />
