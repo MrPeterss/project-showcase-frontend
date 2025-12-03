@@ -56,6 +56,7 @@ export type CourseOfferingSettings = {
   course_visibility?: number[]
   allowDeployment?: boolean
   project_tags?: string[]
+  serverLocked?: boolean
 }
 
 // Enrollment entity

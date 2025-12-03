@@ -21,6 +21,14 @@ export const courseOfferingServices = {
   // Delete course offering (Admin only)
   delete: (id: number): Promise<ApiResponse<void>> =>
     api.delete(`/course-offerings/${id}`),
+
+  // Lock course offering deployments (Admin or Instructor)
+  lock: (id: number): Promise<ApiResponse<CourseOffering>> =>
+    api.post(`/course-offerings/${id}/lock`),
+
+  // Unlock course offering deployments (Admin or Instructor)
+  unlock: (id: number): Promise<ApiResponse<CourseOffering>> =>
+    api.post(`/course-offerings/${id}/unlock`),
 }
 
 export default courseOfferingServices

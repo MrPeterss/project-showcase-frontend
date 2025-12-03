@@ -17,6 +17,7 @@ import {
   Pencil,
   Check,
   X,
+  AlertCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { services } from '@/services';
@@ -64,7 +65,6 @@ export default function CourseSettings() {
   const [isUpdatingName, setIsUpdatingName] = useState(false);
 
   // State for settings
-  const [lockProjectServer, setLockProjectServer] = useState(false);
   const [enrollmentInput, setEnrollmentInput] = useState('');
   const [showAddEnrollments, setShowAddEnrollments] = useState(false);
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
@@ -74,6 +74,9 @@ export default function CourseSettings() {
   const [tagInput, setTagInput] = useState('');
   const [isTagging, setIsTagging] = useState(false);
   const [removingTag, setRemovingTag] = useState<string | null>(null);
+  const [isTogglingLock, setIsTogglingLock] = useState(false);
+  const [lockError, setLockError] = useState<string | null>(null);
+  const [lockSuccess, setLockSuccess] = useState<string | null>(null);
 
   const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
 
@@ -607,6 +610,49 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
     }
   };
 
+  const handleToggleLock = async () => {
+    if (!offering || !offeringId || isTogglingLock) return;
+
+    // Clear previous messages
+    setLockError(null);
+    setLockSuccess(null);
+    setIsTogglingLock(true);
+
+    const isCurrentlyLocked = offering.settings?.serverLocked || false;
+
+    try {
+      if (isCurrentlyLocked) {
+        await services.courseOfferings.unlock(offering.id);
+        setLockSuccess('Project server unlocked successfully!');
+      } else {
+        await services.courseOfferings.lock(offering.id);
+        setLockSuccess('Project server locked successfully!');
+      }
+
+      // Refresh offering to get updated settings
+      await refetchOffering();
+
+      // Auto-dismiss success message after 3 seconds
+      setTimeout(() => {
+        setLockSuccess(null);
+      }, 3000);
+    } catch (error: any) {
+      console.error('Error toggling lock:', error);
+      const errorMessage =
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to toggle lock. Please try again.';
+      setLockError(errorMessage);
+
+      // Auto-dismiss error message after 5 seconds
+      setTimeout(() => {
+        setLockError(null);
+      }, 5000);
+    } finally {
+      setIsTogglingLock(false);
+    }
+  };
+
   // Check if user has access based on course-specific role or global admin role
   const hasCourseAccess = canManage;
 
@@ -1020,26 +1066,89 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                 Project Server
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
+            <CardContent className="space-y-4">
+              <div className="space-y-4">
                 <div>
-                  <h4 className="font-medium text-left">Lock Project Server</h4>
-                  <p className="text-sm text-muted-foreground text-left">
-                    Prevents students from pushing to the project server when
-                    this is enabled.
+                  <h4 className="font-medium text-left mb-2">
+                    Deployment Lock
+                  </h4>
+                  <p className="text-sm text-muted-foreground text-left mb-3">
+                    When locked, students cannot deploy or stop projects. Admins
+                    and instructors can still perform these actions.
                   </p>
                 </div>
-                <Button
-                  variant={lockProjectServer ? 'default' : 'outline'}
-                  onClick={() => setLockProjectServer(!lockProjectServer)}
-                  disabled={true}
-                  className={
-                    lockProjectServer ? 'bg-red-700 hover:bg-red-800' : ''
-                  }
-                >
-                  {lockProjectServer ? 'Locked' : 'Unlocked'}
-                </Button>
+
+                {/* Current Status Display */}
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-md border">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">
+                      Current Status:
+                    </span>
+                    {offering?.settings?.serverLocked ? (
+                      <Badge
+                        variant="secondary"
+                        className="bg-red-100 text-red-700 hover:bg-red-100"
+                      >
+                        <Lock className="h-3 w-3 mr-1" />
+                        Locked
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="secondary"
+                        className="bg-green-100 text-green-700 hover:bg-green-100"
+                      >
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Unlocked
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+
+                {/* Action Button */}
+                <div className="flex justify-end">
+                  <Button
+                    onClick={handleToggleLock}
+                    disabled={isTogglingLock}
+                    className={
+                      offering?.settings?.serverLocked
+                        ? 'bg-green-600 hover:bg-green-700 text-white'
+                        : 'bg-red-700 hover:bg-red-800 text-white'
+                    }
+                  >
+                    {isTogglingLock ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        {offering?.settings?.serverLocked
+                          ? 'Unlocking...'
+                          : 'Locking...'}
+                      </>
+                    ) : offering?.settings?.serverLocked ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Unlock Server
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="h-4 w-4 mr-2" />
+                        Lock Server
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
+
+              {lockSuccess && (
+                <div className="flex items-center gap-2 text-green-600 text-sm bg-green-50 p-3 rounded-md border border-green-200">
+                  <Check className="h-4 w-4" />
+                  <span>{lockSuccess}</span>
+                </div>
+              )}
+              {lockError && (
+                <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-3 rounded-md border border-red-200">
+                  <AlertCircle className="h-4 w-4" />
+                  <span>{lockError}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
 

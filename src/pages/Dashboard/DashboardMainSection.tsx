@@ -23,6 +23,7 @@ import {
   Globe,
   ExternalLink,
   StopCircle,
+  Lock,
 } from 'lucide-react';
 import type { Team } from '@/services/types';
 import {
@@ -56,15 +57,19 @@ export default function DashboardMainSection({
   // Get effectiveRole from CourseContext if available (respects student view toggle)
   // This will be undefined if not in a course context (e.g., standalone dashboard)
   let effectiveRole: string | undefined;
+  let courseOffering: any = null;
   try {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const courseContext = useCourseContext();
     effectiveRole = courseContext?.effectiveRole;
+    courseOffering = courseContext?.offering;
   } catch {
     // Not in course context, use user role
     effectiveRole = user?.role;
   }
   const isAdmin = effectiveRole === 'ADMIN';
+  const isInstructor = effectiveRole === 'INSTRUCTOR';
+  const canBypassLock = isAdmin || isInstructor;
   const [githubUrl, setGithubUrl] = useState('');
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -235,6 +240,27 @@ export default function DashboardMainSection({
 
     if (!githubUrl.trim()) {
       return;
+    }
+
+    // Check if server is locked
+    const isServerLocked = courseOffering?.settings?.serverLocked || false;
+
+    if (isServerLocked) {
+      if (canBypassLock) {
+        // Admin/Instructor: Show warning but allow deployment
+        const confirmed = window.confirm(
+          '⚠️ Warning: The project server is currently locked.\n\n' +
+            'As an admin/instructor, you can still deploy, but students cannot.\n\n' +
+            'Do you want to proceed with the deployment?'
+        );
+        if (!confirmed) return;
+      } else {
+        // Student: Block deployment
+        alert(
+          'Deployments are currently locked for this course. Please contact your instructor.'
+        );
+        return;
+      }
     }
 
     // Clear any previous success/error messages when starting new deployment
@@ -697,10 +723,31 @@ export default function DashboardMainSection({
       return;
     }
 
-    const confirmed = window.confirm(
-      'Are you sure you want to stop this project? The container will be stopped.'
-    );
-    if (!confirmed) return;
+    // Check if server is locked
+    const isServerLocked = courseOffering?.settings?.serverLocked || false;
+
+    if (isServerLocked) {
+      if (canBypassLock) {
+        // Admin/Instructor: Show warning but allow stopping
+        const confirmed = window.confirm(
+          '⚠️ Warning: The project server is currently locked.\n\n' +
+            'As an admin/instructor, you can still stop projects, but students cannot.\n\n' +
+            'Are you sure you want to stop this project? The container will be stopped.'
+        );
+        if (!confirmed) return;
+      } else {
+        // Student: Block stopping
+        alert(
+          'Project control is currently locked for this course. Please contact your instructor.'
+        );
+        return;
+      }
+    } else {
+      const confirmed = window.confirm(
+        'Are you sure you want to stop this project? The container will be stopped.'
+      );
+      if (!confirmed) return;
+    }
 
     setStopError(null);
     setIsStopping(true);
@@ -830,8 +877,11 @@ export default function DashboardMainSection({
                   variant="outline"
                   size="sm"
                   onClick={handleStopProject}
-                  disabled={isStopping}
-                  className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700"
+                  disabled={
+                    isStopping ||
+                    (courseOffering?.settings?.serverLocked && !canBypassLock)
+                  }
+                  className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isStopping ? (
                     <>
@@ -868,6 +918,36 @@ export default function DashboardMainSection({
               ) : null;
             })()}
             <div className="space-y-2">
+              {/* Lock Warning Message for Students */}
+              {courseOffering?.settings?.serverLocked && !canBypassLock && (
+                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                  <Lock className="h-4 w-4 text-red-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-red-800">
+                      Server Locked
+                    </p>
+                    <p className="text-xs text-red-700">
+                      Deployments are currently disabled. Please contact your
+                      instructor for more information.
+                    </p>
+                  </div>
+                </div>
+              )}
+              {/* Lock Warning Message for Admins/Instructors */}
+              {courseOffering?.settings?.serverLocked && canBypassLock && (
+                <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                  <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-800">
+                      Server Locked (Admin Override Active)
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      The server is locked for students, but you can still
+                      deploy as an admin/instructor.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -875,8 +955,12 @@ export default function DashboardMainSection({
                   onChange={(e) => setGithubUrl(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="add a GitHub URL..."
-                  className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  disabled={isDeploying || isMigrating}
+                  className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  disabled={
+                    isDeploying ||
+                    isMigrating ||
+                    (courseOffering?.settings?.serverLocked && !canBypassLock)
+                  }
                 />
                 <Button
                   onClick={handleDeploy}
@@ -885,7 +969,8 @@ export default function DashboardMainSection({
                     isBuildingOldJson ||
                     isBuildingOldSql ||
                     isMigrating ||
-                    !githubUrl.trim()
+                    !githubUrl.trim() ||
+                    (courseOffering?.settings?.serverLocked && !canBypassLock)
                   }
                   className="bg-black hover:bg-gray-800 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   aria-busy={isDeploying}
@@ -988,7 +1073,12 @@ export default function DashboardMainSection({
                 </span>
                 <label
                   htmlFor="data-file-input"
-                  className="text-sm text-blue-600 hover:underline cursor-pointer"
+                  className={`text-sm ${
+                    isDeploying ||
+                    (courseOffering?.settings?.serverLocked && !canBypassLock)
+                      ? 'text-gray-400 cursor-not-allowed'
+                      : 'text-blue-600 hover:underline cursor-pointer'
+                  }`}
                 >
                   {dataFile ? dataFile.name : 'Choose file...'}
                 </label>
@@ -1000,7 +1090,10 @@ export default function DashboardMainSection({
                     setDataFile(file);
                   }}
                   className="hidden"
-                  disabled={isDeploying}
+                  disabled={
+                    isDeploying ||
+                    (courseOffering?.settings?.serverLocked && !canBypassLock)
+                  }
                 />
                 {dataFile && (
                   <button
@@ -1015,8 +1108,11 @@ export default function DashboardMainSection({
                         fileInput.value = '';
                       }
                     }}
-                    className="text-gray-400 hover:text-gray-600 p-1"
-                    disabled={isDeploying}
+                    className="text-gray-400 hover:text-gray-600 p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={
+                      isDeploying ||
+                      (courseOffering?.settings?.serverLocked && !canBypassLock)
+                    }
                     aria-label="Remove file"
                   >
                     <X className="h-4 w-4" />
@@ -1238,23 +1334,31 @@ export default function DashboardMainSection({
                               className="flex items-start justify-between py-3"
                             >
                               <div className="flex flex-col items-start text-left">
-                                <span className="text-sm text-gray-900 text-left">
-                                  <span className="font-medium">
-                                    {(project.deployedBy as any)?.name ||
-                                      project.deployedBy?.email ||
-                                      'Unknown user'}
-                                  </span>{' '}
-                                  deployed{' '}
-                                  <span className="text-gray-700">
-                                    the server
+                                <div className="flex flex-col">
+                                  <span className="text-sm text-gray-900 text-left">
+                                    <span className="font-medium">
+                                      {(project.deployedBy as any)?.name ||
+                                        project.deployedBy?.email ||
+                                        'Unknown user'}
+                                    </span>{' '}
+                                    deployed{' '}
+                                    <span className="text-gray-700">
+                                      the server
+                                    </span>
                                   </span>
-                                </span>
+                                  {(project.deployedBy as any)?.name &&
+                                    project.deployedBy?.email && (
+                                      <span className="text-xs text-gray-500 mt-0.5">
+                                        {project.deployedBy.email}
+                                      </span>
+                                    )}
+                                </div>
                                 {githubUrl && (
                                   <a
                                     href={githubUrl}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="text-xs text-blue-600 hover:underline truncate max-w-[320px] text-left"
+                                    className="text-xs text-blue-600 hover:underline truncate max-w-[320px] text-left mt-1"
                                   >
                                     {displayGithubPath(githubUrl)}
                                   </a>
