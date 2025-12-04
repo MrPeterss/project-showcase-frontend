@@ -24,6 +24,7 @@ import {
   ExternalLink,
   StopCircle,
   Lock,
+  RotateCcw,
 } from 'lucide-react';
 import type { Team } from '@/services/types';
 import {
@@ -42,6 +43,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { projectKeys } from '@/hooks/useProjects';
 import { teamKeys } from '@/hooks/useTeams';
 import type { ParsedLogLine } from '@/services/projects';
+import { parseLogs } from '@/services/projects';
 import { useAuth } from '@/hooks/useAuth';
 import { services } from '@/services';
 import { useCourseContext } from '@/components/CourseLayout';
@@ -87,9 +89,12 @@ export default function DashboardMainSection({
   const [stopError, setStopError] = useState<string | null>(null);
   const [showMigrationModal, setShowMigrationModal] = useState(false);
   const [migrationGithubUrl, setMigrationGithubUrl] = useState('');
+  const [isTagDropdownOpen, setIsTagDropdownOpen] = useState(false);
+  const [isRedeploying, setIsRedeploying] = useState(false);
   const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const buildLogsRef = useRef<HTMLDivElement | null>(null);
   const containerLogsRef = useRef<HTMLDivElement | null>(null);
+  const tagDropdownRef = useRef<HTMLDivElement | null>(null);
 
   const queryClient = useQueryClient();
   const { data: projectsData, isLoading: projectsLoading } = useProjectsByTeam(
@@ -123,7 +128,7 @@ export default function DashboardMainSection({
 
   const isDeploying = streamingDeploy.isDeploying;
   const streamStarted = streamingDeploy.streamStarted;
-  const buildLogs = streamingDeploy.buildLogs;
+  const streamingBuildLogs = streamingDeploy.buildLogs;
   const isBuildLogsStreaming = streamingDeploy.isDeploying;
   const buildLogsError = streamingDeploy.error;
 
@@ -151,15 +156,28 @@ export default function DashboardMainSection({
   // Get the latest project (first entry is the latest deployment)
   const latestProject = projects.length > 0 ? projects[0] : null;
 
-  // Prefill deployment URL using the most recent deployment when available
+  // Parse static build logs from the latest project when not streaming
+  const staticBuildLogs = useMemo(() => {
+    if (isBuildLogsStreaming || !latestProject?.buildLogs) {
+      return [];
+    }
+    return parseLogs(latestProject.buildLogs);
+  }, [latestProject?.buildLogs, isBuildLogsStreaming]);
+
+  // Use streaming logs when deploying, otherwise use static logs
+  const buildLogs = isBuildLogsStreaming ? streamingBuildLogs : staticBuildLogs;
+
+  // Prefill deployment URL using the most recent deployment when available (only on initial mount)
+  const [hasInitializedUrl, setHasInitializedUrl] = useState(false);
   useEffect(() => {
-    if (!githubUrl && latestProject) {
+    if (!hasInitializedUrl && latestProject) {
       const url = (latestProject as any).githubUrl || latestProject.gitHubLink;
       if (url) {
         setGithubUrl(url);
+        setHasInitializedUrl(true);
       }
     }
-  }, [githubUrl, latestProject]);
+  }, [hasInitializedUrl, latestProject]);
 
   // Clear success message when an error occurs
   useEffect(() => {
@@ -172,6 +190,7 @@ export default function DashboardMainSection({
       }
     }
   }, [streamingDeploy.error]);
+
 
   // Show success message when deployment completes
   useEffect(() => {
@@ -233,8 +252,33 @@ export default function DashboardMainSection({
     }
   }, [containerLogs, isLogsCardOpen]);
 
+  // Close tag dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        tagDropdownRef.current &&
+        !tagDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsTagDropdownOpen(false);
+      }
+    };
+
+    if (isTagDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isTagDropdownOpen]);
+
+  // Check if the current githubUrl value is a tag
+  const isTagSelected = useMemo(() => {
+    return team.tags?.includes(githubUrl.trim()) || false;
+  }, [githubUrl, team.tags]);
+
   const handleDeploy = async () => {
-    if (isDeploying) {
+    if (isDeploying || isRedeploying) {
       return;
     }
 
@@ -251,7 +295,7 @@ export default function DashboardMainSection({
         const confirmed = window.confirm(
           '⚠️ Warning: The project server is currently locked.\n\n' +
             'As an admin/instructor, you can still deploy, but students cannot.\n\n' +
-            'Do you want to proceed with the deployment?'
+            `Do you want to proceed with the ${isTagSelected ? 'redeployment' : 'deployment'}?`
         );
         if (!confirmed) return;
       } else {
@@ -271,6 +315,75 @@ export default function DashboardMainSection({
       successTimeoutRef.current = null;
     }
 
+    // If a tag is selected, use redeploy endpoint
+    if (isTagSelected) {
+      const taggedProject = projects.find((p: any) => p.tag === githubUrl.trim());
+      
+      if (!taggedProject) {
+        alert(`No project found with tag "${githubUrl.trim()}"`);
+        return;
+      }
+
+      setIsRedeploying(true);
+
+      // Optimistically update project status to "building" if there's a latest project
+      if (latestProject) {
+        queryClient.setQueryData(projectKeys.detail(latestProject.id), {
+          ...latestProject,
+          status: 'building',
+        });
+        // Also update in the team projects list
+        queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
+          if (!old || !Array.isArray(old)) return old;
+          return old.map((p: any) =>
+            p.id === latestProject.id ? { ...p, status: 'building' } : p
+          );
+        });
+      }
+
+      try {
+        const response = await services.projects.redeploy(taggedProject.id);
+
+        if (response.data) {
+          // Invalidate queries to refresh the project list
+          queryClient.invalidateQueries({
+            queryKey: projectKeys.listByTeam(team.id),
+          });
+          queryClient.setQueryData(
+            projectKeys.detail(response.data.id),
+            response.data
+          );
+          queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
+          queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
+          queryClient.invalidateQueries({ queryKey: projectKeys.all });
+          if (team.courseOfferingId) {
+            queryClient.invalidateQueries({
+              queryKey: teamKeys.listByOffering(team.courseOfferingId),
+            });
+            queryClient.invalidateQueries({
+              queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
+            });
+          }
+          queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+
+          setDeploymentSuccess(`Tagged project "${githubUrl.trim()}" redeployed successfully!`);
+          setTimeout(() => setDeploymentSuccess(null), 5000);
+          setGithubUrl(''); // Clear selection after success
+        }
+      } catch (error) {
+        console.error('Redeploy failed:', error);
+        alert(
+          error instanceof Error
+            ? error.message
+            : 'Redeployment failed. Please try again.'
+        );
+      } finally {
+        setIsRedeploying(false);
+      }
+      return;
+    }
+
+    // Regular deployment flow for GitHub URLs
     // Basic GitHub URL validation
     const githubUrlPattern =
       /^https:\/\/github\.com\/[\w\-\.]+\/[\w\-\.]+(\/)?$/;
@@ -305,10 +418,6 @@ export default function DashboardMainSection({
         dataFile: dataFile || undefined,
       });
 
-      // The streaming deploy hook handles the streaming and will call onComplete
-      // when deployment is done. We'll show success message when project is deployed.
-      // Check for deployed project in useEffect below
-
       setGithubUrl(''); // Clear input on success
       setDataFile(null); // Clear file input on success
       // Reset the file input element
@@ -320,8 +429,7 @@ export default function DashboardMainSection({
       }
     } catch (error) {
       console.error('Deployment failed:', error);
-      setDeploymentSuccess(null); // Clear any success message on error
-      // Error will be handled by the streaming deploy hook
+      setDeploymentSuccess(null);
     }
   };
 
@@ -949,36 +1057,111 @@ export default function DashboardMainSection({
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={githubUrl}
-                  onChange={(e) => setGithubUrl(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="add a GitHub URL..."
-                  className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                  disabled={
-                    isDeploying ||
-                    isMigrating ||
-                    (courseOffering?.settings?.serverLocked && !canBypassLock)
-                  }
-                />
+                <div className="relative flex-1" ref={tagDropdownRef}>
+                  <input
+                    type="text"
+                    value={githubUrl}
+                    onChange={(e) => setGithubUrl(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="add a GitHub URL or select a tag..."
+                    className="w-full p-2 pr-10 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                    disabled={
+                      isDeploying ||
+                      isRedeploying ||
+                      isMigrating ||
+                      (courseOffering?.settings?.serverLocked && !canBypassLock)
+                    }
+                  />
+                  {team.tags && team.tags.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsTagDropdownOpen(!isTagDropdownOpen)}
+                      disabled={
+                        isDeploying ||
+                        isRedeploying ||
+                        isMigrating ||
+                        (courseOffering?.settings?.serverLocked && !canBypassLock)
+                      }
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ChevronDown
+                        className={`h-4 w-4 text-gray-500 transition-transform ${
+                          isTagDropdownOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                  )}
+                  {isTagDropdownOpen && team.tags && team.tags.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGithubUrl('');
+                            setIsTagDropdownOpen(false);
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 text-gray-700 border-b border-gray-200"
+                        >
+                          <Github className="h-3 w-3" />
+                          <span>GitHub link new deployment</span>
+                        </button>
+                        <div className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200">
+                          Tagged Versions
+                        </div>
+                        {team.tags.map((tag) => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              setGithubUrl(tag);
+                              setIsTagDropdownOpen(false);
+                            }}
+                            className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2 ${
+                              githubUrl === tag
+                                ? 'bg-blue-50 text-blue-900 font-medium'
+                                : 'text-gray-900'
+                            }`}
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            <span className="truncate">{tag}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <Button
                   onClick={handleDeploy}
                   disabled={
                     isDeploying ||
+                    isRedeploying ||
                     isBuildingOldJson ||
                     isBuildingOldSql ||
                     isMigrating ||
                     !githubUrl.trim() ||
                     (courseOffering?.settings?.serverLocked && !canBypassLock)
                   }
-                  className="bg-black hover:bg-gray-800 text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  aria-busy={isDeploying}
+                  className={`${
+                    isTagSelected
+                      ? 'bg-blue-600 hover:bg-blue-700'
+                      : 'bg-black hover:bg-gray-800'
+                  } text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
+                  aria-busy={isDeploying || isRedeploying}
                 >
                   {isDeploying ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin" />
                       <span>Deploying...</span>
+                    </>
+                  ) : isRedeploying ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Redeploying...</span>
+                    </>
+                  ) : isTagSelected ? (
+                    <>
+                      <RotateCcw className="h-4 w-4" />
+                      <span>Redeploy</span>
                     </>
                   ) : (
                     'Deploy'
@@ -1120,6 +1303,7 @@ export default function DashboardMainSection({
                 )}
               </div>
             </div>
+
             {deploymentSuccess && (
               <div className="flex items-center gap-2 text-green-600 text-sm">
                 <CheckCircle className="h-4 w-4" />
@@ -1183,7 +1367,9 @@ export default function DashboardMainSection({
             </div>
           ) : buildLogs.length === 0 ? (
             <div className="font-mono text-sm text-gray-600 p-4">
-              No build logs available yet. Deploy a project to see build logs.
+              {latestProject
+                ? 'No build logs available for this project.'
+                : 'No build logs available yet. Deploy a project to see build logs.'}
             </div>
           ) : (
             <div

@@ -77,6 +77,7 @@ export type Team = {
   courseOffering?: CourseOffering
   members?: TeamMember[]
   projects?: Project[]
+  tags?: string[]
 }
 
 // Team Member entity
@@ -109,6 +110,8 @@ export type Project = {
   gitHubLink: string
   deployedAt: string
   stoppedAt?: string
+  tag?: string
+  buildLogs?: string
   team?: Team
   deployedBy?: User
 }

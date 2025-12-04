@@ -32,10 +32,13 @@ import {
 } from '@/hooks/useEnrollments';
 import { useCourseOfferings } from '@/hooks/useCourseOfferings';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
+import { useQueryClient } from '@tanstack/react-query';
+import { teamKeys } from '@/hooks/useTeams';
 
 export default function CourseSettings() {
   const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   // IMPORTANT: Call all hooks at the top, before any conditional logic
   const {
@@ -552,6 +555,9 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
       // Refresh offering to get updated settings
       await refetchOffering();
 
+      // Force refetch all team queries to update tags on dashboard pages immediately
+      await queryClient.refetchQueries({ queryKey: teamKeys.all });
+
       setTagInput('');
       alert('Projects tagged successfully!');
     } catch (error) {
@@ -602,6 +608,9 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
 
       // Refresh offering to get updated settings
       await refetchOffering();
+
+      // Force refetch all team queries to update tags on dashboard pages immediately
+      await queryClient.refetchQueries({ queryKey: teamKeys.all });
     } catch (error) {
       console.error('Error removing tag:', error);
       alert('Failed to remove tag. Please try again.');

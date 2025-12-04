@@ -408,6 +408,10 @@ export const projectServices = {
       })
       .then((response) => ({ data: response.data, success: true }))
   },
+
+  // Redeploy a tagged project
+  redeploy: (projectId: number): Promise<ApiResponse<Project>> =>
+    api.post(`/projects/${projectId}/redeploy`, {}, { timeout: 0 }),
 }
 
 export default projectServices
