@@ -6,17 +6,8 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect } from 'react';
 
 export default function CourseDashboard() {
-  const { courseId } = useParams<{ courseId: string }>();
   const navigate = useNavigate();
-  const { offering, loading: offeringLoading, effectiveRole } = useCourseContext();
-
-  // Check course-specific role access after fetching offering
-  useEffect(() => {
-    if (effectiveRole && effectiveRole !== 'STUDENT') {
-      // Redirect to projects page if not a student
-      navigate(`/courses/${courseId}`, { replace: true });
-    }
-  }, [effectiveRole, courseId, navigate]);
+  const { offering, loading: offeringLoading } = useCourseContext();
 
   return (
     <div className="container mx-auto p-6">

@@ -1,4 +1,10 @@
-import { useParams, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import {
+  useParams,
+  Outlet,
+  useLocation,
+  useNavigate,
+  matchPath,
+} from 'react-router-dom';
 import { useEffect, useState, createContext, useContext, useMemo } from 'react';
 import { useRoleAccess } from '@/hooks/useRoleAccess';
 import { CourseNavBar } from '@/components/CourseNavBar';
@@ -76,17 +82,17 @@ export function CourseLayout() {
   // This prevents students from having admin privileges after admin sign-out
   const hasRoleMismatch = useMemo(() => {
     if (!user || !effectiveRole) return false;
-    
+
     // If user is not an admin globally, they should never have ADMIN effectiveRole
     if (user.role !== 'ADMIN' && effectiveRole === 'ADMIN') {
       return true;
     }
-    
+
     // If user is a student globally, they should never have ADMIN effectiveRole
     if (user.role === 'STUDENT' && effectiveRole === 'ADMIN') {
       return true;
     }
-    
+
     return false;
   }, [user, effectiveRole]);
 
@@ -130,36 +136,35 @@ export function CourseLayout() {
     courseId,
   ]);
 
+  // Only redirect from settings if user doesn't have access
+  // Let React Router handle all other route matching - no redirects for dashboard routes
   useEffect(() => {
     if (!courseId) return;
-    if (loading) return;
-    if (!effectiveRole) return;
 
-    const basePath = `/courses/${courseId}`;
-    const normalizedPath = location.pathname.replace(/\/$/, '');
+    const currentPath = location.pathname;
 
-    const allowedPaths = new Set<string>([basePath]);
-
-    // Allow dashboard routes for all roles (dashboard/:teamId)
-    allowedPaths.add(`${basePath}/dashboard`);
-
-    if (effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN') {
-      allowedPaths.add(`${basePath}/settings`);
+    // Never redirect from dashboard routes - let React Router handle them
+    if (currentPath.includes('/dashboard')) {
+      return;
     }
 
-    const normalizedAllowed = Array.from(allowedPaths).map((path) =>
-      path.replace(/\/$/, '')
+    // Only check settings route access
+    const settingsMatch = matchPath(
+      { path: '/courses/:courseId/settings', end: true },
+      currentPath
     );
 
-    // Check if path matches exactly or starts with an allowed path (for nested routes like dashboard/:teamId)
-    const isAllowed = normalizedAllowed.some((path) => 
-      path === normalizedPath || normalizedPath.startsWith(path + '/')
-    );
+    if (settingsMatch?.params.courseId === courseId) {
+      // Wait for loading to complete and effectiveRole to be set before checking settings access
+      if (loading) return;
+      if (!effectiveRole) return;
 
-    if (!isAllowed) {
-      navigate(basePath, { replace: true });
+      // Only redirect from settings if user doesn't have access
+      if (effectiveRole !== 'INSTRUCTOR' && effectiveRole !== 'ADMIN') {
+        navigate(`/courses/${courseId}`, { replace: true });
+      }
     }
-  }, [courseId, effectiveRole, location.pathname, navigate, loading]);
+  }, [courseId, effectiveRole, navigate, loading, location.pathname]);
 
   const toggleViewAsStudent = () => {
     if (!isAdmin) return;

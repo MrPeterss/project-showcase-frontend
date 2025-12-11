@@ -41,7 +41,7 @@ export default function CourseTeamDashboard() {
   const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
 
   // Check if user is a member of this team
-  const isTeamMember = myTeams?.some((t) => t.id === teamIdNum) ?? false;
+  const isTeamMember = (myTeams?.some((t) => t.id === teamIdNum) ?? false) || canManage;
 
   useEffect(() => {
     const expectedPath = `/courses/${courseId}/dashboard/${teamIdNum}`;

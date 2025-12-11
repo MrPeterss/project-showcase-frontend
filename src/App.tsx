@@ -22,12 +22,27 @@ import CourseTeamDashboard from './pages/CourseTeamDashboard';
 import CourseSettings from './pages/CourseSettings';
 import Dashboard from './pages/Dashboard';
 import ProjectNotFound from './pages/ProjectNotFound';
+import NotFound from './pages/NotFound';
 import LoginCard from './components/LoginCard';
 import Admin from './pages/Admin';
 
 function AppContent() {
   const location = useLocation();
+
+  // Define all valid route patterns
+  const isValidRoute =
+    location.pathname === '/login' ||
+    location.pathname === '/courses' ||
+    location.pathname === '/' ||
+    location.pathname === '/admin' ||
+    location.pathname.startsWith('/courses/') ||
+    location.pathname.startsWith('/dashboard/') ||
+    location.pathname.startsWith('/not-found/');
+
+  // Only show NavBar on routes that need it
+  // Exclude: login, courses, course pages, dashboard pages, admin, not-found pages, and 404 pages
   const shouldShowNav =
+    isValidRoute &&
     location.pathname !== '/login' &&
     location.pathname !== '/courses' &&
     !location.pathname.startsWith('/courses/') &&
@@ -46,8 +61,8 @@ function AppContent() {
           <Route path="/courses" element={<Courses />} />
           <Route path="/courses/:courseId" element={<CourseLayout />}>
             <Route index element={<CourseProjects />} />
-            <Route path="dashboard" element={<CourseDashboard />} />
             <Route path="dashboard/:teamId" element={<CourseTeamDashboard />} />
+            <Route path="dashboard" element={<CourseDashboard />} />
             <Route path="settings" element={<CourseSettings />} />
           </Route>
           <Route path="/dashboard/:teamId" element={<Dashboard />} />
@@ -55,6 +70,7 @@ function AppContent() {
           <Route path="/not-found/:team_name" element={<ProjectNotFound />} />
           <Route path="/login" element={<LoginCard />} />
           <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
     </div>
