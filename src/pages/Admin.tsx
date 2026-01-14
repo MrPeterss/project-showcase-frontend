@@ -29,6 +29,8 @@ import {
   HardDrive,
   FileText,
 } from 'lucide-react';
+import { SortableTable } from '@/components/ui/sortable-table';
+import type { ColumnDef } from '@/components/ui/sortable-table';
 
 // Helper to format team context
 function formatTeamContext(team: AdminTeam): string {
@@ -205,46 +207,60 @@ export default function Admin() {
     }
   };
 
-  // Render project row
-  const renderProjectRow = (project: AdminProject) => {
-    const isRunning = project.status === 'running';
-    const isStopping = loading.stopping.has(project.id);
-    const isPruning = loading.pruning.has(project.id);
-    const shortContainerId = project.containerId
-      ? project.containerId.substring(0, 12)
-      : null;
-
-    return (
-      <tr key={project.id} className="border-t hover:bg-white">
-        <td className="px-4 py-3 border-r">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              {getStatusBadge(project.status)}
-              <span className="text-sm font-medium">Project #{project.id}</span>
-            </div>
-            {project.githubUrl && (
-              <a
-                href={project.githubUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-              >
-                <ExternalLink className="h-3 w-3" />
-                {project.githubUrl
-                  .replace(/^https?:\/\//, '')
-                  .split('/')
-                  .slice(0, 2)
-                  .join('/')}
-              </a>
-            )}
-            {project.tag && (
-              <Badge variant="outline" className="text-xs">
-                {project.tag}
-              </Badge>
-            )}
+  // Define project columns for sortable table
+  const projectColumns: ColumnDef<AdminProject>[] = [
+    {
+      key: 'project',
+      label: 'Project',
+      headerClassName: 'border-r',
+      cellClassName: 'border-r',
+      accessor: (project) => project.id,
+      render: (project) => (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            {getStatusBadge(project.status)}
+            <span className="text-sm font-medium">Project #{project.id}</span>
           </div>
-        </td>
-        <td className="px-4 py-3 border-r">
+          {project.githubUrl && (
+            <a
+              href={project.githubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {project.githubUrl
+                .replace(/^https?:\/\//, '')
+                .split('/')
+                .slice(0, 2)
+                .join('/')}
+            </a>
+          )}
+          {project.tag && (
+            <Badge variant="outline" className="text-xs">
+              {project.tag}
+            </Badge>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'container',
+      label: (
+        <div className="flex items-center gap-2">
+          <Package className="h-3 w-3" />
+          Container
+        </div>
+      ),
+      headerClassName: 'border-r',
+      cellClassName: 'border-r',
+      accessor: (project) => project.containerName || project.containerId || '',
+      render: (project) => {
+        const shortContainerId = project.containerId
+          ? project.containerId.substring(0, 12)
+          : null;
+
+        return (
           <div className="space-y-1 text-sm">
             {project.containerId ? (
               <>
@@ -259,45 +275,97 @@ export default function Admin() {
               <div className="text-xs text-muted-foreground">No container</div>
             )}
           </div>
-        </td>
-        <td className="px-4 py-3 border-r">
-          <div className="space-y-1 text-sm">
-            {project.imageName || project.imageHash ? (
-              <>
-                {project.imageName ? (
-                  <div className="text-xs font-mono">{project.imageName}</div>
-                ) : (
-                  <div className="text-xs font-mono text-muted-foreground">
-                    {project.imageHash?.substring(0, 19) || 'Unknown'}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="text-xs text-muted-foreground">No image</div>
-            )}
-          </div>
-        </td>
-        <td className="px-4 py-3 border-r">
-          <div className="space-y-1 text-sm">
-            {project.dataFile ? (
-              <>
-                <div className="text-xs">{project.dataFile.fileName}</div>
-                <div className="text-xs text-muted-foreground">
-                  {project.dataFile.sizeFormatted}
+        );
+      },
+    },
+    {
+      key: 'image',
+      label: (
+        <div className="flex items-center gap-2">
+          <HardDrive className="h-3 w-3" />
+          Image
+        </div>
+      ),
+      headerClassName: 'border-r',
+      cellClassName: 'border-r',
+      accessor: (project) => project.imageName || project.imageHash || '',
+      render: (project) => (
+        <div className="space-y-1 text-sm">
+          {project.imageName || project.imageHash ? (
+            <>
+              {project.imageName ? (
+                <div className="text-xs font-mono">{project.imageName}</div>
+              ) : (
+                <div className="text-xs font-mono text-muted-foreground">
+                  {project.imageHash?.substring(0, 19) || 'Unknown'}
                 </div>
-              </>
-            ) : (
-              <div className="text-xs text-muted-foreground">No data file</div>
-            )}
-          </div>
-        </td>
-        <td className="px-4 py-3 text-xs text-muted-foreground border-r">
+              )}
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground">No image</div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'dataFile',
+      label: (
+        <div className="flex items-center gap-2">
+          <FileText className="h-3 w-3" />
+          Data File
+        </div>
+      ),
+      headerClassName: 'border-r',
+      cellClassName: 'border-r',
+      accessor: (project) => project.dataFile?.fileName || '',
+      render: (project) => (
+        <div className="space-y-1 text-sm">
+          {project.dataFile ? (
+            <>
+              <div className="text-xs">{project.dataFile.fileName}</div>
+              <div className="text-xs text-muted-foreground">
+                {project.dataFile.sizeFormatted}
+              </div>
+            </>
+          ) : (
+            <div className="text-xs text-muted-foreground">No data file</div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'deployed',
+      label: 'Deployed',
+      headerClassName: 'border-r',
+      cellClassName: 'border-r',
+      accessor: (project) => project.deployedAt || '',
+      sortFn: (a, b, direction) => {
+        const aTime = a.deployedAt ? new Date(a.deployedAt).getTime() : 0;
+        const bTime = b.deployedAt ? new Date(b.deployedAt).getTime() : 0;
+        return direction === 'asc' ? aTime - bTime : bTime - aTime;
+      },
+      render: (project) => (
+        <div className="text-xs text-muted-foreground">
           <div>{formatDate(project.deployedAt)}</div>
           {project.stoppedAt && (
             <div className="mt-1">Stopped: {formatDate(project.stoppedAt)}</div>
           )}
-        </td>
-        <td className="px-4 py-3 text-right border-l">
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      headerClassName: 'border-l',
+      cellClassName: 'border-l',
+      align: 'right',
+      sortable: false,
+      render: (project) => {
+        const isRunning = project.status === 'running';
+        const isStopping = loading.stopping.has(project.id);
+        const isPruning = loading.pruning.has(project.id);
+
+        return (
           <div className="flex gap-1 justify-end">
             {isRunning && (
               <Button
@@ -327,10 +395,10 @@ export default function Admin() {
               )}
             </Button>
           </div>
-        </td>
-      </tr>
-    );
-  };
+        );
+      },
+    },
+  ];
 
   // Render team section
   const renderTeamSection = (teamData: TeamWithProjects) => {
@@ -362,42 +430,13 @@ export default function Admin() {
         </div>
         {isExpanded && (
           <div className="bg-gray-50 border-t">
-            <table className="w-full">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 border-r">
-                    Project
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 border-r">
-                    <div className="flex items-center gap-2">
-                      <Package className="h-3 w-3" />
-                      Container
-                    </div>
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 border-r">
-                    <div className="flex items-center gap-2">
-                      <HardDrive className="h-3 w-3" />
-                      Image
-                    </div>
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 border-r">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-3 w-3" />
-                      Data File
-                    </div>
-                  </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 border-r">
-                    Deployed
-                  </th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-500">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {projects.map((project) => renderProjectRow(project))}
-              </tbody>
-            </table>
+            <SortableTable
+              columns={projectColumns}
+              data={projects}
+              getRowKey={(project) => project.id}
+              headerClassName="bg-gray-100"
+              rowClassName="border-t hover:bg-white"
+            />
           </div>
         )}
       </div>

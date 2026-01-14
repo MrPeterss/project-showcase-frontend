@@ -37,6 +37,7 @@ import {
   setTeamsError,
   setTeamsLoading,
 } from '@/store/slices/teamsSlice';
+import { SortableTable } from '@/components/ui/sortable-table';
 
 export default function CourseProjects() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -290,198 +291,231 @@ export default function CourseProjects() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b bg-gray-50">
-                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-r">
-                          Team Name
-                        </th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-r">
-                          Members
-                        </th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-r">
-                          Status
-                        </th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-r">
-                          Last Updated
-                        </th>
-                        <th className="text-left p-3 text-xs font-medium text-gray-500 border-l">
-                          Project Link
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {teams.map((team) => {
-                        // Get the most recent deployment date
-                        const latestProject =
-                          team.projects && team.projects.length > 0
-                            ? team.projects[0]
-                            : null;
-                        const lastDeployed = latestProject?.deployedAt || null;
-                        const githubUrl = latestProject
-                          ? (latestProject as any).githubUrl ||
-                            latestProject.gitHubLink
-                          : null;
-                        const isDeployed = lastDeployed !== null;
+                  <SortableTable
+                    columns={[
+                      {
+                        key: 'teamName',
+                        label: 'Team Name',
+                        headerClassName: 'border-r',
+                        cellClassName: 'border-r',
+                        accessor: (team) => team.name,
+                        render: (team) => {
+                          const handleTeamNameClick = () => {
+                            const isTeamMember =
+                              myTeams?.some((t: Team) => t.id === team.id) ??
+                              false;
 
-                        const handleTeamNameClick = () => {
-                          // Check if user is a member of this team
-                          const isTeamMember =
-                            myTeams?.some((t: Team) => t.id === team.id) ??
-                            false;
-
-                          // Students can only access their own teams
-                          if (!canManage && !isTeamMember) {
-                            return;
-                          }
-
-                          // If admin or instructor is viewing a team they're not part of, add it as a tab first
-                          if (
-                            canManage &&
-                            myTeams &&
-                            !myTeams.some((t: Team) => t.id === team.id)
-                          ) {
-                            addTab(team.id, team.name);
-                          }
-                          // Then navigate
-                          navigate(`/courses/${courseId}/dashboard/${team.id}`);
-                        };
-
-                        const handleDelete = async () => {
-                          if (
-                            window.confirm(
-                              `Are you sure you want to delete the team "${team.name}"? This action cannot be undone.`
-                            )
-                          ) {
-                            try {
-                              await deleteTeam.mutateAsync(team.id);
-                            } catch (error) {
-                              console.error('Error deleting team:', error);
-                              alert('Failed to delete team. Please try again.');
+                            if (!canManage && !isTeamMember) {
+                              return;
                             }
-                          }
-                        };
 
-                        return (
-                          <tr
-                            key={team.id}
-                            className="border-b hover:bg-gray-50"
-                          >
-                            <td className="text-left p-3 border-r">
-                              <div className="flex items-center gap-2">
-                                {(() => {
-                                  const isTeamMember =
-                                    myTeams?.some(
-                                      (t: Team) => t.id === team.id
-                                    ) ?? false;
-                                  const canAccess = canManage || isTeamMember;
+                            if (
+                              canManage &&
+                              myTeams &&
+                              !myTeams.some((t: Team) => t.id === team.id)
+                            ) {
+                              addTab(team.id, team.name);
+                            }
+                            navigate(`/courses/${courseId}/dashboard/${team.id}`);
+                          };
 
-                                  return canAccess ? (
-                                    <button
-                                      onClick={handleTeamNameClick}
-                                      className="font-medium text-left hover:text-blue-600 hover:underline cursor-pointer transition-colors"
-                                    >
-                                      {team.name}
-                                    </button>
-                                  ) : (
-                                    <span className="font-medium text-gray-700">
-                                      {team.name}
-                                    </span>
+                          const handleDelete = async () => {
+                            if (
+                              window.confirm(
+                                `Are you sure you want to delete the team "${team.name}"? This action cannot be undone.`
+                              )
+                            ) {
+                              try {
+                                await deleteTeam.mutateAsync(team.id);
+                              } catch (error) {
+                                console.error('Error deleting team:', error);
+                                alert('Failed to delete team. Please try again.');
+                              }
+                            }
+                          };
+
+                          const isTeamMember =
+                            myTeams?.some((t: Team) => t.id === team.id) ?? false;
+                          const canAccess = canManage || isTeamMember;
+
+                          return (
+                            <div className="flex items-center gap-2">
+                              {canAccess ? (
+                                <button
+                                  onClick={handleTeamNameClick}
+                                  className="font-medium text-left hover:text-blue-600 hover:underline cursor-pointer transition-colors"
+                                >
+                                  {team.name}
+                                </button>
+                              ) : (
+                                <span className="font-medium text-gray-700">
+                                  {team.name}
+                                </span>
+                              )}
+                              {canManage && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditingTeam(team);
+                                      setIsEditTeamModalOpen(true);
+                                    }}
+                                    className="h-7 w-7 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete();
+                                    }}
+                                    disabled={deleteTeam.isPending}
+                                    className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        },
+                      },
+                      {
+                        key: 'members',
+                        label: 'Members',
+                        headerClassName: 'border-r',
+                        cellClassName: 'border-r',
+                        accessor: (team) => team.members?.length || 0,
+                        render: (team) => (
+                          <Badge variant="outline">
+                            {team.members?.length || 0}
+                          </Badge>
+                        ),
+                      },
+                      {
+                        key: 'status',
+                        label: 'Status',
+                        headerClassName: 'border-r',
+                        cellClassName: 'border-r',
+                        accessor: (team) => getProjectStatus(team),
+                        render: (team) => getStatusBadge(getProjectStatus(team)),
+                      },
+                      {
+                        key: 'lastUpdated',
+                        label: 'Last Updated',
+                        headerClassName: 'border-r',
+                        cellClassName: 'border-r text-muted-foreground',
+                        accessor: (team) => {
+                          const latestProject =
+                            team.projects && team.projects.length > 0
+                              ? team.projects[0]
+                              : null;
+                          return latestProject?.deployedAt || '';
+                        },
+                        sortFn: (a, b, direction) => {
+                          const aProject =
+                            a.projects && a.projects.length > 0
+                              ? a.projects[0]
+                              : null;
+                          const bProject =
+                            b.projects && b.projects.length > 0
+                              ? b.projects[0]
+                              : null;
+                          const aTime = aProject?.deployedAt
+                            ? new Date(aProject.deployedAt).getTime()
+                            : 0;
+                          const bTime = bProject?.deployedAt
+                            ? new Date(bProject.deployedAt).getTime()
+                            : 0;
+                          return direction === 'asc' ? aTime - bTime : bTime - aTime;
+                        },
+                        render: (team) => {
+                          const latestProject =
+                            team.projects && team.projects.length > 0
+                              ? team.projects[0]
+                              : null;
+                          const lastDeployed = latestProject?.deployedAt || null;
+                          return lastDeployed
+                            ? new Date(lastDeployed).toLocaleString()
+                            : 'Not deployed';
+                        },
+                      },
+                      {
+                        key: 'projectLink',
+                        label: 'Project Link',
+                        headerClassName: 'border-l',
+                        cellClassName: 'border-l',
+                        sortable: false,
+                        render: (team) => {
+                          const latestProject =
+                            team.projects && team.projects.length > 0
+                              ? team.projects[0]
+                              : null;
+                          const lastDeployed = latestProject?.deployedAt || null;
+                          const githubUrl = latestProject
+                            ? (latestProject as any).githubUrl ||
+                              latestProject.gitHubLink
+                            : null;
+                          const isDeployed = lastDeployed !== null;
+
+                          return (
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const projectUrl = getProjectUrl(team);
+                                  window.open(
+                                    projectUrl,
+                                    '_blank',
+                                    'noopener,noreferrer'
                                   );
-                                })()}
-                                {canManage && (
-                                  <>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setEditingTeam(team);
-                                        setIsEditTeamModalOpen(true);
-                                      }}
-                                      className="h-7 w-7 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-                                    >
-                                      <Pencil className="h-3.5 w-3.5" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleDelete();
-                                      }}
-                                      disabled={deleteTeam.isPending}
-                                      className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                    >
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    </Button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                            <td className="text-left p-3 border-r">
-                              <Badge variant="outline">
-                                {team.members?.length || 0}
-                              </Badge>
-                            </td>
-                            <td className="text-left p-3 border-r">
-                              {getStatusBadge(getProjectStatus(team))}
-                            </td>
-                            <td className="text-left p-3 text-sm text-muted-foreground border-r">
-                              {lastDeployed
-                                ? new Date(lastDeployed).toLocaleString()
-                                : 'Not deployed'}
-                            </td>
-                            <td className="text-left p-3 border-l">
-                              <div className="flex items-center gap-2">
+                                }}
+                                disabled={
+                                  !isDeployed ||
+                                  getProjectStatus(team) !== 'running'
+                                }
+                                className={`flex items-center gap-2 ${
+                                  getProjectStatus(team) !== 'running'
+                                    ? 'opacity-50 cursor-not-allowed text-gray-500'
+                                    : ''
+                                }`}
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                                Open Project
+                              </Button>
+                              {isDeployed && githubUrl && (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
-                                    const projectUrl = getProjectUrl(team);
                                     window.open(
-                                      projectUrl,
+                                      githubUrl,
                                       '_blank',
                                       'noopener,noreferrer'
                                     );
                                   }}
-                                  disabled={
-                                    !isDeployed ||
-                                    getProjectStatus(team) !== 'running'
-                                  }
-                                  className={`flex items-center gap-2 ${
-                                    getProjectStatus(team) !== 'running'
-                                      ? 'opacity-50 cursor-not-allowed text-gray-500'
-                                      : ''
-                                  }`}
+                                  className="flex items-center gap-2"
                                 >
-                                  <ExternalLink className="h-4 w-4" />
-                                  Open Project
+                                  <Github className="h-4 w-4" />
+                                  GitHub
                                 </Button>
-                                {isDeployed && githubUrl && (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      window.open(
-                                        githubUrl,
-                                        '_blank',
-                                        'noopener,noreferrer'
-                                      );
-                                    }}
-                                    className="flex items-center gap-2"
-                                  >
-                                    <Github className="h-4 w-4" />
-                                    GitHub
-                                  </Button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              )}
+                            </div>
+                          );
+                        },
+                      },
+                    ]}
+                    data={teams}
+                    getRowKey={(team) => team.id}
+                    className="border-collapse"
+                    headerClassName="bg-gray-50"
+                    rowClassName="border-b hover:bg-gray-50"
+                  />
                 </div>
               )}
             </CardContent>

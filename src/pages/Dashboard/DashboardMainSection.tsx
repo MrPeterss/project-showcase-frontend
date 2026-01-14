@@ -25,6 +25,8 @@ import {
   StopCircle,
   Lock,
   RotateCcw,
+  Plus,
+  Settings,
 } from 'lucide-react';
 import type { Team } from '@/services/types';
 import {
@@ -95,6 +97,42 @@ export default function DashboardMainSection({
   const buildLogsRef = useRef<HTMLDivElement | null>(null);
   const containerLogsRef = useRef<HTMLDivElement | null>(null);
   const tagDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Environment variables state
+  const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
+  const [isEnvVarsLoaded, setIsEnvVarsLoaded] = useState(false);
+
+  // Load environment variables from localStorage on mount and when team changes
+  useEffect(() => {
+    const storageKey = `env_vars_team_${team.id}`;
+    try {
+      const savedEnvVars = localStorage.getItem(storageKey);
+      if (savedEnvVars) {
+        const parsed = JSON.parse(savedEnvVars);
+        if (Array.isArray(parsed)) {
+          setEnvVars(parsed);
+        }
+      } else {
+        setEnvVars([]);
+      }
+    } catch (error) {
+      console.error('Failed to load environment variables:', error);
+      setEnvVars([]);
+    }
+    setIsEnvVarsLoaded(true);
+  }, [team.id]);
+
+  // Save environment variables to localStorage whenever they change (after initial load)
+  useEffect(() => {
+    if (isEnvVarsLoaded) {
+      const storageKey = `env_vars_team_${team.id}`;
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(envVars));
+      } catch (error) {
+        console.error('Failed to save environment variables:', error);
+      }
+    }
+  }, [envVars, team.id, isEnvVarsLoaded]);
 
   const queryClient = useQueryClient();
   const { data: projectsData, isLoading: projectsLoading } = useProjectsByTeam(
@@ -413,9 +451,18 @@ export default function DashboardMainSection({
     }
 
     try {
+      // Convert envVars array to object, filtering out empty keys
+      const envVarsObject = envVars
+        .filter(env => env.key.trim() !== '')
+        .reduce((acc, env) => {
+          acc[env.key.trim()] = env.value;
+          return acc;
+        }, {} as Record<string, string>);
+
       await streamingDeploy.deploy({
         githubUrl: githubUrl.trim(),
         dataFile: dataFile || undefined,
+        envVars: Object.keys(envVarsObject).length > 0 ? envVarsObject : undefined,
       });
 
       setGithubUrl(''); // Clear input on success
@@ -437,6 +484,27 @@ export default function DashboardMainSection({
     if (e.key === 'Enter' && !isDeploying) {
       handleDeploy();
     }
+  };
+
+  // Environment variables handlers
+  const handleAddEnvVar = () => {
+    setEnvVars([...envVars, { key: '', value: '' }]);
+  };
+
+  const handleRemoveEnvVar = (index: number) => {
+    setEnvVars(envVars.filter((_, i) => i !== index));
+  };
+
+  const handleEnvVarKeyChange = (index: number, key: string) => {
+    const newEnvVars = [...envVars];
+    newEnvVars[index].key = key;
+    setEnvVars(newEnvVars);
+  };
+
+  const handleEnvVarValueChange = (index: number, value: string) => {
+    const newEnvVars = [...envVars];
+    newEnvVars[index].value = value;
+    setEnvVars(newEnvVars);
   };
 
   const handleBuildOldJson = async () => {
@@ -938,8 +1006,8 @@ export default function DashboardMainSection({
 
   const projectStatus = getProjectStatus();
   return (
-    <div className="flex-1 p-6">
-      <div className="max-w-4xl mx-auto space-y-6">
+    <div className="flex-1 p-6 min-w-0">
+      <div className="max-w-4xl mx-auto space-y-6 w-full">
         {/* Header */}
         <div className="space-y-4">
           <div className="flex items-center gap-3">
@@ -1304,6 +1372,58 @@ export default function DashboardMainSection({
               </div>
             </div>
 
+            {/* Environment Variables Section */}
+            <Card className="p-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-4 w-4 text-gray-600" />
+                    <span className="text-sm font-medium text-gray-700">Environment Variables</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAddEnvVar}
+                    className="flex items-center gap-1"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add
+                  </Button>
+                </div>
+                
+                {envVars.length > 0 && (
+                  <div className="space-y-2">
+                    {envVars.map((envVar, index) => (
+                      <div key={index} className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={envVar.key}
+                          onChange={(e) => handleEnvVarKeyChange(index, e.target.value)}
+                          placeholder="KEY"
+                          className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                        />
+                        <input
+                          type="text"
+                          value={envVar.value}
+                          onChange={(e) => handleEnvVarValueChange(index, e.target.value)}
+                          placeholder="value"
+                          className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEnvVar(index)}
+                          className="text-gray-400 hover:text-red-600 p-1"
+                          aria-label="Remove variable"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </Card>
+
             {deploymentSuccess && (
               <div className="flex items-center gap-2 text-green-600 text-sm">
                 <CheckCircle className="h-4 w-4" />
@@ -1341,13 +1461,14 @@ export default function DashboardMainSection({
         </div>
 
         {/* Build Logs (collapsible) */}
-        <CollapsibleCard
-          title="Build Logs"
-          icon={<Wrench className="h-5 w-5" />}
-          open={isBuildLogsOpen}
-          onToggle={setIsBuildLogsOpen}
-          maxBodyHeightClass="max-h-80"
-        >
+        <div className="min-w-0">
+          <CollapsibleCard
+            title="Build Logs"
+            icon={<Wrench className="h-5 w-5" />}
+            open={isBuildLogsOpen}
+            onToggle={setIsBuildLogsOpen}
+            maxBodyHeightClass="max-h-80"
+          >
           {isBuildLogsStreaming && !streamStarted ? (
             <div className="font-mono text-sm text-gray-600 p-4">
               <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
@@ -1374,10 +1495,10 @@ export default function DashboardMainSection({
           ) : (
             <div
               ref={buildLogsRef}
-              className="bg-black text-green-400 p-4 rounded font-mono text-xs overflow-y-auto max-h-80 text-left"
+              className="bg-black text-green-400 p-4 rounded font-mono text-xs overflow-y-auto overflow-x-auto max-h-80 text-left min-w-0"
             >
               {buildLogs.map((log: ParsedLogLine) => (
-                <div key={log.id} className="mb-1 text-left">
+                <div key={log.id} className="mb-1 text-left whitespace-nowrap">
                   {log.timestamp && (
                     <span className="text-gray-500">
                       [{formatTimestamp(log.timestamp)}]
@@ -1404,16 +1525,18 @@ export default function DashboardMainSection({
               )}
             </div>
           )}
-        </CollapsibleCard>
+          </CollapsibleCard>
+        </div>
 
         {/* Container Logs (collapsible) */}
-        <CollapsibleCard
-          title="Container Logs"
-          icon={<Terminal className="h-5 w-5" />}
-          defaultOpen={false}
-          maxBodyHeightClass="max-h-80"
-          onToggle={setIsLogsCardOpen}
-        >
+        <div className="min-w-0">
+          <CollapsibleCard
+            title="Container Logs"
+            icon={<Terminal className="h-5 w-5" />}
+            defaultOpen={false}
+            maxBodyHeightClass="max-h-80"
+            onToggle={setIsLogsCardOpen}
+          >
           {isContainerLogsStreaming && containerLogs.length === 0 ? (
             <div className="font-mono text-sm text-gray-600 p-4">
               <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
@@ -1433,10 +1556,10 @@ export default function DashboardMainSection({
           ) : (
             <div
               ref={containerLogsRef}
-              className="bg-black text-green-400 p-4 rounded font-mono text-xs overflow-y-auto max-h-80 text-left"
+              className="bg-black text-green-400 p-4 rounded font-mono text-xs overflow-y-auto overflow-x-auto max-h-80 text-left min-w-0"
             >
               {containerLogs.map((log: ParsedLogLine) => (
-                <div key={log.id} className="mb-1 text-left">
+                <div key={log.id} className="mb-1 text-left whitespace-nowrap">
                   {log.timestamp && (
                     <span className="text-gray-500">
                       [{formatTimestamp(log.timestamp)}]
@@ -1463,7 +1586,8 @@ export default function DashboardMainSection({
               )}
             </div>
           )}
-        </CollapsibleCard>
+          </CollapsibleCard>
+        </div>
 
         {/* Deployment History (collapsible) */}
         <Card>
