@@ -31,4 +31,4 @@ jobs:
         
       - name: Reload nginx
         run: |
-          systemctl reload nginx
+          docker exec nginx-proxy nginx -s reload
