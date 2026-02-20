@@ -74,6 +74,7 @@ export type Team = {
   port?: number
   courseOfferingId: number
   createdAt: string
+  hallOfFame?: boolean
   courseOffering?: CourseOffering
   members?: TeamMember[]
   projects?: Project[]
@@ -165,6 +166,7 @@ export type CreateTeamData = {
 export type UpdateTeamData = {
   name?: string
   memberEmails?: string[]
+  hallOfFame?: boolean
 }
 
 // Enrollment creation/update DTOs

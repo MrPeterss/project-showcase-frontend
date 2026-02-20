@@ -25,6 +25,7 @@ export const EditTeamModal: React.FC<EditTeamModalProps> = ({
 }) => {
   const [teamName, setTeamName] = useState('');
   const [emailsInput, setEmailsInput] = useState('');
+  const [hallOfFame, setHallOfFame] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const updateTeam = useUpdateTeam();
@@ -36,6 +37,7 @@ export const EditTeamModal: React.FC<EditTeamModalProps> = ({
       const memberEmails =
         team.members?.map((m) => m.user?.email || '').filter(Boolean) || [];
       setEmailsInput(memberEmails.join('\n'));
+      setHallOfFame(team.hallOfFame || false);
       setErrors({});
     }
   }, [team, isOpen]);
@@ -96,6 +98,7 @@ export const EditTeamModal: React.FC<EditTeamModalProps> = ({
         data: {
           name: teamName.trim(),
           memberEmails: emails,
+          hallOfFame: hallOfFame,
         },
       });
 
@@ -122,6 +125,7 @@ export const EditTeamModal: React.FC<EditTeamModalProps> = ({
     if (!isSubmitting) {
       setTeamName('');
       setEmailsInput('');
+      setHallOfFame(false);
       setErrors({});
       onClose();
     }
@@ -198,6 +202,23 @@ export const EditTeamModal: React.FC<EditTeamModalProps> = ({
             {errors.emails && (
               <p className="mt-1 text-sm text-red-600">{errors.emails}</p>
             )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="hallOfFame"
+              type="checkbox"
+              checked={hallOfFame}
+              onChange={(e) => setHallOfFame(e.target.checked)}
+              className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded cursor-pointer"
+              disabled={isSubmitting}
+            />
+            <label
+              htmlFor="hallOfFame"
+              className="text-sm font-medium text-gray-700 cursor-pointer"
+            >
+              Hall of Fame Project
+            </label>
           </div>
         </div>
 

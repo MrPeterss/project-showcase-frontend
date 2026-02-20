@@ -16,6 +16,7 @@ import {
   Clock,
   Activity,
   AlertCircle,
+  Star,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -211,6 +212,15 @@ export default function CourseProjects() {
   const loading = offeringLoading || teamsLoading;
   const error = offeringError || teamsError;
 
+  // Sort teams: hall of fame first
+  const sortedTeams = useMemo(() => {
+    return [...teams].sort((a, b) => {
+      if (a.hallOfFame && !b.hallOfFame) return -1;
+      if (!a.hallOfFame && b.hallOfFame) return 1;
+      return 0;
+    });
+  }, [teams]);
+
   return (
     <div className="container mx-auto p-6">
       {/* Loading state */}
@@ -339,47 +349,55 @@ export default function CourseProjects() {
                           const canAccess = canManage || isTeamMember;
 
                           return (
-                            <div className="flex items-center gap-2">
-                              {canAccess ? (
-                                <button
-                                  onClick={handleTeamNameClick}
-                                  className="font-medium text-left hover:text-blue-600 hover:underline cursor-pointer transition-colors"
-                                >
-                                  {team.name}
-                                </button>
-                              ) : (
-                                <span className="font-medium text-gray-700">
-                                  {team.name}
-                                </span>
+                            <div className="flex flex-col gap-0">
+                              {team.hallOfFame && (
+                                <Badge className="bg-gradient-to-r from-amber-500 to-yellow-500 text-white border-none hover:from-amber-600 hover:to-yellow-600 w-fit">
+                                  <Star className="h-3 w-3 mr-1 fill-white" />
+                                  Hall of Fame
+                                </Badge>
                               )}
-                              {canManage && (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingTeam(team);
-                                      setIsEditTeamModalOpen(true);
-                                    }}
-                                    className="h-7 w-7 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                              <div className="flex items-center gap-2">
+                                {canAccess ? (
+                                  <button
+                                    onClick={handleTeamNameClick}
+                                    className="font-medium text-left hover:text-blue-600 hover:underline cursor-pointer transition-colors"
                                   >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDelete();
-                                    }}
-                                    disabled={deleteTeam.isPending}
-                                    className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </Button>
-                                </>
-                              )}
+                                    {team.name}
+                                  </button>
+                                ) : (
+                                  <span className="font-medium text-gray-700">
+                                    {team.name}
+                                  </span>
+                                )}
+                                {canManage && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingTeam(team);
+                                        setIsEditTeamModalOpen(true);
+                                      }}
+                                      className="h-7 w-7 p-0 text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDelete();
+                                      }}
+                                      disabled={deleteTeam.isPending}
+                                      className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
                             </div>
                           );
                         },
@@ -510,11 +528,15 @@ export default function CourseProjects() {
                         },
                       },
                     ]}
-                    data={teams}
+                    data={sortedTeams}
                     getRowKey={(team) => team.id}
                     className="border-collapse"
                     headerClassName="bg-gray-50"
-                    rowClassName="border-b hover:bg-gray-50"
+                    rowClassName={(team) =>
+                      team.hallOfFame
+                        ? 'border-b hover:bg-yellow-50 bg-gradient-to-r from-yellow-50 to-amber-50 border-l-4 border-l-amber-500 shadow-[0_0_0_1px_rgb(217,119,6,0.3)]'
+                        : 'border-b hover:bg-gray-50'
+                    }
                   />
                 </div>
               )}
