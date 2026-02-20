@@ -23,7 +23,7 @@ export const useRoleAccess = (
 
     // If not authenticated, redirect to login
     if (!isAuthenticated) {
-      navigate('/login', { replace: true, state: { from: location.pathname } })
+      navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`, { replace: true })
       return
     }
 
@@ -35,7 +35,7 @@ export const useRoleAccess = (
         navigate(route, { replace: true })
       } else {
         // Redirect to login
-        navigate('/login', { replace: true, state: { from: location.pathname } })
+        navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`, { replace: true })
       }
     }
   }, [user, isAuthenticated, isLoading, allowedRoles, redirectToRoleRoute, navigate, location.pathname])

@@ -15,11 +15,10 @@ const LoginCard = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Get the redirect path from location state or query params, default to /courses
+  // Get the redirect path from query params, default to /courses
   const searchParams = new URLSearchParams(location.search);
   const redirectParam = searchParams.get('redirect');
-  const stateFrom = (location.state as any)?.from;
-  const from = redirectParam || stateFrom || '/courses';
+  const from = redirectParam || '/courses';
 
   // Redirect to original page or courses page when authenticated
   useEffect(() => {

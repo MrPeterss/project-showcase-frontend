@@ -26,7 +26,7 @@ export default function Dashboard() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      navigate('/login', { replace: true, state: { from: location.pathname } });
+      navigate(`/login?redirect=${encodeURIComponent(location.pathname)}`, { replace: true });
     }
   }, [isAuthenticated, authLoading, navigate, location.pathname]);
 
