@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './useAuth'
 import { getRouteForRole } from '@/lib/routing'
 import type { Role } from '@/services/types'
@@ -15,6 +15,7 @@ export const useRoleAccess = (
 ) => {
   const { user, isAuthenticated, isLoading } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   useEffect(() => {
     // Don't redirect while still loading
@@ -22,7 +23,7 @@ export const useRoleAccess = (
 
     // If not authenticated, redirect to login
     if (!isAuthenticated) {
-      navigate('/login', { replace: true })
+      navigate('/login', { replace: true, state: { from: location.pathname } })
       return
     }
 
@@ -34,10 +35,10 @@ export const useRoleAccess = (
         navigate(route, { replace: true })
       } else {
         // Redirect to login
-        navigate('/login', { replace: true })
+        navigate('/login', { replace: true, state: { from: location.pathname } })
       }
     }
-  }, [user, isAuthenticated, isLoading, allowedRoles, redirectToRoleRoute, navigate])
+  }, [user, isAuthenticated, isLoading, allowedRoles, redirectToRoleRoute, navigate, location.pathname])
 
   return {
     hasAccess: user?.role ? allowedRoles.includes(user.role) : false,

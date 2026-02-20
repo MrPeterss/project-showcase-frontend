@@ -120,7 +120,9 @@ apiClient.interceptors.response.use(
             // Only redirect if we're not already on the login page
             const isLoginPage = window.location.pathname === '/login'
             if (!isLoginPage) {
-              window.location.href = '/login'
+              // Preserve the current path for redirect after login
+              const currentPath = window.location.pathname
+              window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`
             }
             
             // Clear the promise so subsequent requests can attempt refresh again

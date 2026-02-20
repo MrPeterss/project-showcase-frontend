@@ -7,19 +7,26 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 
 const LoginCard = () => {
   const { isAuthenticated, isLoading, error, signIn } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
-  // Redirect to courses page when authenticated
+  // Get the redirect path from location state or query params, default to /courses
+  const searchParams = new URLSearchParams(location.search);
+  const redirectParam = searchParams.get('redirect');
+  const stateFrom = (location.state as any)?.from;
+  const from = redirectParam || stateFrom || '/courses';
+
+  // Redirect to original page or courses page when authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/courses', { replace: true });
+      navigate(from, { replace: true });
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, from]);
 
   return (
     <div className="min-h-svh grid place-items-center p-6">

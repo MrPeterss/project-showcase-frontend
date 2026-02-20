@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useMemo, useEffect } from 'react';
 import { useTeam } from '@/hooks/useTeams';
 import { useAuth } from '@/hooks/useAuth';
@@ -8,6 +8,7 @@ import DashboardSideBarSection from './DashboardSideBarSection.tsx';
 export default function Dashboard() {
   const { teamId } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, isLoading: authLoading } = useAuth();
 
   const teamIdNum = useMemo(() => {
@@ -25,9 +26,9 @@ export default function Dashboard() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      navigate('/login', { replace: true });
+      navigate('/login', { replace: true, state: { from: location.pathname } });
     }
-  }, [isAuthenticated, authLoading, navigate]);
+  }, [isAuthenticated, authLoading, navigate, location.pathname]);
 
   // Show loading state while authenticating or loading team data
   if (authLoading || (isAuthenticated && loading)) {
