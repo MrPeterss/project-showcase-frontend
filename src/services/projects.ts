@@ -5,7 +5,7 @@ export interface DeployProjectData {
   teamId: number
   githubUrl: string
   dataFile?: File // Optional data file for deployment
-  envVars?: Record<string, string> // Optional environment variables
+  extraEnvVars?: Record<string, string> // Optional environment variables
 }
 
 export interface ContainerLog {
@@ -68,9 +68,9 @@ export const projectServices = {
       formData.append('dataFile', data.dataFile)
     }
     
-    // Append envVars as JSON string if provided
-    if (data.envVars) {
-      formData.append('envVars', JSON.stringify(data.envVars))
+    // Append extraEnvVars as JSON string if provided
+    if (data.extraEnvVars) {
+      formData.append('extraEnvVars', JSON.stringify(data.extraEnvVars))
     }
     
     // Get headers from axios instance for consistency

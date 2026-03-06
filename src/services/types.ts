@@ -67,6 +67,16 @@ export type Enrollment = {
   user?: User
 }
 
+// Team environment variable (from backend)
+export type TeamEnvironment = {
+  id: number
+  teamId: number
+  keyName: string
+  keyValue?: string
+  scope: 'PRODUCTION' | 'DEVELOPMENT'
+  isSecret: boolean
+}
+
 // Team entity
 export type Team = {
   id: number
@@ -75,6 +85,7 @@ export type Team = {
   courseOfferingId: number
   createdAt: string
   hallOfFame?: boolean
+  environments?: TeamEnvironment[]
   courseOffering?: CourseOffering
   members?: TeamMember[]
   projects?: Project[]

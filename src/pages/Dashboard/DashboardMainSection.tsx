@@ -27,6 +27,8 @@ import {
   RotateCcw,
   Plus,
   Settings,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import type { Team } from '@/services/types';
 import {
@@ -101,6 +103,7 @@ export default function DashboardMainSection({
   // Environment variables state
   const [envVars, setEnvVars] = useState<Array<{ key: string; value: string }>>([]);
   const [isEnvVarsLoaded, setIsEnvVarsLoaded] = useState(false);
+  const [showDevelopmentVars, setShowDevelopmentVars] = useState(false);
 
   // Load environment variables from localStorage on mount and when team changes
   useEffect(() => {
@@ -462,7 +465,7 @@ export default function DashboardMainSection({
       await streamingDeploy.deploy({
         githubUrl: githubUrl.trim(),
         dataFile: dataFile || undefined,
-        envVars: Object.keys(envVarsObject).length > 0 ? envVarsObject : undefined,
+        extraEnvVars: Object.keys(envVarsObject).length > 0 ? envVarsObject : undefined,
       });
 
       setGithubUrl(''); // Clear input on success
@@ -1373,56 +1376,171 @@ export default function DashboardMainSection({
             </div>
 
             {/* Environment Variables Section */}
-            <Card className="p-4">
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
+            <div className="space-y-3">
+              {/* Issued Environment Variables (from backend) */}
+              <Card className="p-4">
+                <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <Settings className="h-4 w-4 text-gray-600" />
-                    <span className="text-sm font-medium text-gray-700">Environment Variables</span>
+                    <span className="text-sm font-medium text-gray-700">
+                      Issued Environment Variables
+                    </span>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAddEnvVar}
-                    className="flex items-center gap-1"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Add
-                  </Button>
-                </div>
-                
-                {envVars.length > 0 && (
-                  <div className="space-y-2">
-                    {envVars.map((envVar, index) => (
-                      <div key={index} className="flex gap-2 items-center">
-                        <input
-                          type="text"
-                          value={envVar.key}
-                          onChange={(e) => handleEnvVarKeyChange(index, e.target.value)}
-                          placeholder="KEY"
-                          className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
-                        />
-                        <input
-                          type="text"
-                          value={envVar.value}
-                          onChange={(e) => handleEnvVarValueChange(index, e.target.value)}
-                          placeholder="value"
-                          className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveEnvVar(index)}
-                          className="text-gray-400 hover:text-red-600 p-1"
-                          aria-label="Remove variable"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                  {team.environments && team.environments.length > 0 ? (
+                    <div className="space-y-4">
+                      {/* Production subsection */}
+                      <div>
+                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
+                          Production
+                        </div>
+                        <div className="space-y-2">
+                          {team.environments
+                            .filter((e) => e.scope === 'PRODUCTION')
+                            .map((env) => (
+                              <div
+                                key={env.id}
+                                className="flex gap-2 items-center font-mono text-sm"
+                              >
+                                <span className="flex-1 text-gray-700">{env.keyName}</span>
+                                <span className="flex-1 text-gray-600 truncate">
+                                  {env.isSecret && !canBypassLock
+                                    ? '••••••••'
+                                    : env.keyValue ?? '••••••••'}
+                                </span>
+                                {env.isSecret && (
+                                  <Lock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                )}
+                              </div>
+                            ))}
+                        </div>
                       </div>
-                    ))}
+                      {/* Development subsection - hidden by default */}
+                      {team.environments.some((e) => e.scope === 'DEVELOPMENT') && (
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                              Development
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                setShowDevelopmentVars((v) => !v)
+                              }
+                              className="h-6 px-2 text-xs text-gray-600"
+                            >
+                              {showDevelopmentVars ? (
+                                <>
+                                  <EyeOff className="h-3 w-3 mr-1" />
+                                  Hide
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  Show
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          {showDevelopmentVars ? (
+                            <>
+                              <p className="text-xs text-amber-600 mb-2">
+                                Development variables are not injected at runtime. They are for
+                                local development reference only.
+                              </p>
+                              <div className="space-y-2">
+                                {team.environments
+                                  .filter((e) => e.scope === 'DEVELOPMENT')
+                                  .map((env) => (
+                                    <div
+                                      key={env.id}
+                                      className="flex gap-2 items-center font-mono text-sm"
+                                    >
+                                      <span className="flex-1 text-gray-700">{env.keyName}</span>
+                                      <span className="flex-1 text-gray-600 truncate">
+                                        {env.isSecret && !canBypassLock
+                                          ? '••••••••'
+                                          : env.keyValue ?? '••••••••'}
+                                      </span>
+                                      {env.isSecret && (
+                                        <Lock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                                      )}
+                                    </div>
+                                  ))}
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-xs text-gray-400 italic">
+                              {team.environments.filter((e) => e.scope === 'DEVELOPMENT').length}{' '}
+                              development variable(s) hidden
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">No issued environment variables.</p>
+                  )}
+                </div>
+              </Card>
+
+              {/* Extra Environment Variables (user-added for deployment) */}
+              <Card className="p-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Plus className="h-4 w-4 text-gray-600" />
+                      <span className="text-sm font-medium text-gray-700">
+                        Extra Environment Variables
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddEnvVar}
+                      className="flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add
+                    </Button>
                   </div>
-                )}
-              </div>
-            </Card>
+                  <p className="text-xs text-gray-500">
+                    Add custom variables to inject during deployment (in addition to issued
+                    variables).
+                  </p>
+                  {envVars.length > 0 && (
+                    <div className="space-y-2">
+                      {envVars.map((envVar, index) => (
+                        <div key={index} className="flex gap-2 items-center">
+                          <input
+                            type="text"
+                            value={envVar.key}
+                            onChange={(e) => handleEnvVarKeyChange(index, e.target.value)}
+                            placeholder="KEY"
+                            className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                          />
+                          <input
+                            type="text"
+                            value={envVar.value}
+                            onChange={(e) => handleEnvVarValueChange(index, e.target.value)}
+                            placeholder="value"
+                            className="flex-1 p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEnvVar(index)}
+                            className="text-gray-400 hover:text-red-600 p-1"
+                            aria-label="Remove variable"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
 
             {deploymentSuccess && (
               <div className="flex items-center gap-2 text-green-600 text-sm">
