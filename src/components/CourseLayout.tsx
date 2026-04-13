@@ -148,18 +148,25 @@ export function CourseLayout() {
       return;
     }
 
-    // Only check settings route access
+    // Only check settings / spark route access
     const settingsMatch = matchPath(
       { path: '/courses/:courseId/settings', end: true },
       currentPath
     );
 
-    if (settingsMatch?.params.courseId === courseId) {
-      // Wait for loading to complete and effectiveRole to be set before checking settings access
+    const sparkMatch = matchPath(
+      { path: '/courses/:courseId/spark', end: true },
+      currentPath
+    );
+
+    const restrictedMatch = settingsMatch || sparkMatch;
+
+    if (restrictedMatch?.params.courseId === courseId) {
+      // Wait for loading to complete and effectiveRole to be set before checking access
       if (loading) return;
       if (!effectiveRole) return;
 
-      // Only redirect from settings if user doesn't have access
+      // Only redirect if user doesn't have access
       if (effectiveRole !== 'INSTRUCTOR' && effectiveRole !== 'ADMIN') {
         navigate(`/courses/${courseId}`, { replace: true });
       }

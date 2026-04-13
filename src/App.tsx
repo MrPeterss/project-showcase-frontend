@@ -20,6 +20,7 @@ import CourseProjects from './pages/CourseProjects';
 import CourseDashboard from './pages/CourseDashboard';
 import CourseTeamDashboard from './pages/CourseTeamDashboard';
 import CourseSettings from './pages/CourseSettings';
+import CourseSpark from './pages/CourseSpark';
 import Dashboard from './pages/Dashboard';
 import ProjectNotFound from './pages/ProjectNotFound';
 import NotFound from './pages/NotFound';
@@ -64,6 +65,7 @@ function AppContent() {
             <Route path="dashboard/:teamId" element={<CourseTeamDashboard />} />
             <Route path="dashboard" element={<CourseDashboard />} />
             <Route path="settings" element={<CourseSettings />} />
+            <Route path="spark" element={<CourseSpark />} />
           </Route>
           <Route path="/dashboard/:teamId" element={<Dashboard />} />
           <Route path="/admin" element={<Admin />} />

@@ -192,6 +192,43 @@ export type UpdateEnrollmentData = {
   role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
 }
 
+// Spark API Key entity (raw object from Spark server)
+export type SparkKey = {
+  id: number
+  description: string
+  origin: string
+  key?: string
+  isActive?: boolean
+  isSecret?: boolean
+  lastUsedAt?: string | null
+  limitTokensPerMinute?: number | null
+  limitTokensPerHour?: number | null
+  createdAt?: string
+}
+
+// Spark key stats
+export type SparkKeyStats = {
+  keyId: number
+  totalRequests: number
+  totalTokens: number
+  hourly: Array<{ hour: string; count: number; totalTokens: number }>
+  daily: Array<{ date: string; count: number; totalTokens: number }>
+}
+
+// Issue Spark keys request body
+export type IssueSparkKeysData = {
+  teamIds?: number[]
+  isSecret?: boolean
+  scope?: 'PRODUCTION' | 'DEVELOPMENT'
+  limitTokensPerMinute?: number | null
+  limitTokensPerHour?: number | null
+}
+
+// Issue Spark keys response per team
+export type IssueSparkKeyResult =
+  | { team: Team; skipped: true }
+  | { team: Team; skipped: false; sparkKey: SparkKey }
+
 // Project creation/update DTOs
 export type CreateProjectData = {
   teamId: number

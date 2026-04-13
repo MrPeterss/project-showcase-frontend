@@ -29,6 +29,9 @@ import {
   Settings,
   Eye,
   EyeOff,
+  Copy,
+  Check,
+  Info,
 } from 'lucide-react';
 import type { Team } from '@/services/types';
 import {
@@ -51,6 +54,89 @@ import { parseLogs } from '@/services/projects';
 import { useAuth } from '@/hooks/useAuth';
 import { services } from '@/services';
 import { useCourseContext } from '@/components/CourseLayout';
+
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <div className="relative group flex items-center">
+      <Info className="h-3.5 w-3.5 text-gray-400 cursor-help" />
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 rounded-md bg-gray-900 px-2.5 py-2 text-xs text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 text-left leading-snug">
+        {content}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+      </div>
+    </div>
+  );
+}
+
+function EnvVarRow({
+  keyName,
+  keyValue,
+  isSecret,
+  canBypassLock,
+}: {
+  keyName: string;
+  keyValue?: string;
+  isSecret: boolean;
+  canBypassLock: boolean;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const canReveal = !isSecret || canBypassLock;
+  const isRevealed = isHovered && canReveal;
+
+  const handleCopy = () => {
+    if (!keyValue) return;
+    navigator.clipboard.writeText(keyValue).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  const canCopy = isRevealed && !!keyValue;
+
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-md border border-gray-100 bg-gray-50 px-3 py-2 transition-colors select-none${canCopy ? ' cursor-pointer hover:bg-gray-100' : ''}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={canCopy ? handleCopy : undefined}
+      title={canCopy ? 'Click to copy' : undefined}
+    >
+      <code className="text-xs font-mono text-gray-600 shrink-0 max-w-[40%] truncate" title={keyName}>
+        {keyName}
+      </code>
+      <span className="text-gray-300 text-xs">=</span>
+      <div className="flex flex-1 items-center gap-1.5 min-w-0 overflow-hidden">
+        {isRevealed ? (
+          <code className="text-xs font-mono text-gray-700 flex-1 truncate min-w-0 text-left">
+            {keyValue ?? '—'}
+          </code>
+        ) : (
+          <span className="text-gray-400 text-xs font-mono tracking-[0.18em] flex-1 truncate">
+            {'•'.repeat(16)}
+          </span>
+        )}
+        <div className="flex-shrink-0 w-4 flex items-center justify-center">
+          {isRevealed ? (
+            keyValue ? (
+              copied ? (
+                <Check className="h-3.5 w-3.5 text-green-600" />
+              ) : (
+                <Copy className="h-3.5 w-3.5 text-gray-400" />
+              )
+            ) : null
+          ) : canReveal ? (
+            <Eye className="h-3.5 w-3.5 text-gray-300" />
+          ) : (
+            <span title="Secret — admin/instructor only">
+              <Lock className="h-3.5 w-3.5 text-gray-400" />
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface DashboardMainSectionProps {
   team: Team;
@@ -1390,27 +1476,23 @@ export default function DashboardMainSection({
                     <div className="space-y-4">
                       {/* Production subsection */}
                       <div>
-                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">
-                          Production
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                            Production
+                          </span>
+                          <InfoTooltip content="Production keys are injected into the container as environment variables when your project is deployed." />
                         </div>
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           {team.environments
                             .filter((e) => e.scope === 'PRODUCTION')
                             .map((env) => (
-                              <div
+                              <EnvVarRow
                                 key={env.id}
-                                className="flex gap-2 items-center font-mono text-sm"
-                              >
-                                <span className="flex-1 text-gray-700">{env.keyName}</span>
-                                <span className="flex-1 text-gray-600 truncate">
-                                  {env.isSecret && !canBypassLock
-                                    ? '••••••••'
-                                    : env.keyValue ?? '••••••••'}
-                                </span>
-                                {env.isSecret && (
-                                  <Lock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                                )}
-                              </div>
+                                keyName={env.keyName}
+                                keyValue={env.keyValue}
+                                isSecret={env.isSecret}
+                                canBypassLock={canBypassLock}
+                              />
                             ))}
                         </div>
                       </div>
@@ -1418,9 +1500,10 @@ export default function DashboardMainSection({
                       {team.environments.some((e) => e.scope === 'DEVELOPMENT') && (
                         <div>
                           <div className="flex items-center gap-2 mb-2">
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
                               Development
-                            </div>
+                            </span>
+                            <InfoTooltip content="Development keys are not injected at runtime. They are for local development reference only." />
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1444,28 +1527,17 @@ export default function DashboardMainSection({
                           </div>
                           {showDevelopmentVars ? (
                             <>
-                              <p className="text-xs text-amber-600 mb-2">
-                                Development variables are not injected at runtime. They are for
-                                local development reference only.
-                              </p>
-                              <div className="space-y-2">
+                              <div className="space-y-1.5">
                                 {team.environments
                                   .filter((e) => e.scope === 'DEVELOPMENT')
                                   .map((env) => (
-                                    <div
+                                    <EnvVarRow
                                       key={env.id}
-                                      className="flex gap-2 items-center font-mono text-sm"
-                                    >
-                                      <span className="flex-1 text-gray-700">{env.keyName}</span>
-                                      <span className="flex-1 text-gray-600 truncate">
-                                        {env.isSecret && !canBypassLock
-                                          ? '••••••••'
-                                          : env.keyValue ?? '••••••••'}
-                                      </span>
-                                      {env.isSecret && (
-                                        <Lock className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-                                      )}
-                                    </div>
+                                      keyName={env.keyName}
+                                      keyValue={env.keyValue}
+                                      isSecret={env.isSecret}
+                                      canBypassLock={canBypassLock}
+                                    />
                                   ))}
                               </div>
                             </>

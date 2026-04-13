@@ -10,6 +10,10 @@ export type {
   ProjectType,
   Project,
   Role,
+  SparkKey,
+  SparkKeyStats,
+  IssueSparkKeysData,
+  IssueSparkKeyResult,
   CreateCourseData, 
   UpdateCourseData,
   CreateCourseOfferingData,
@@ -34,6 +38,7 @@ export { default as semesterServices } from './semesters'
 export { default as teamServices } from './teams'
 export { default as projectServices, parseLogs } from './projects'
 export { default as adminServices } from './admin'
+export { default as sparkServices } from './spark'
 export type {
   DeployProjectData,
   ContainerLog,
@@ -62,6 +67,7 @@ import semesterServices from './semesters'
 import teamServices from './teams'
 import projectServices from './projects'
 import adminServices from './admin'
+import sparkServices from './spark'
 
 export const services = {
   auth: authServices,
@@ -72,6 +78,7 @@ export const services = {
   teams: teamServices,
   projects: projectServices,
   admin: adminServices,
+  spark: sparkServices,
 }
 
 export default services

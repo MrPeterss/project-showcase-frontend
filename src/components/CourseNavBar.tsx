@@ -103,8 +103,10 @@ function CourseNavBarComponent({
 
     if (isAdmin && !viewAsStudent) {
       tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
+      tabs.push({ path: `/courses/${courseId}/spark`, label: 'Spark' });
     } else if (normalizedRole === 'INSTRUCTOR') {
       tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
+      tabs.push({ path: `/courses/${courseId}/spark`, label: 'Spark' });
     }
 
     return tabs;
