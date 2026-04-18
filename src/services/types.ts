@@ -206,13 +206,58 @@ export type SparkKey = {
   createdAt?: string
 }
 
-// Spark key stats
-export type SparkKeyStats = {
-  keyId: number
+/** Hourly/daily usage series shared by single-key and offering-wide Spark stats. */
+export type SparkUsageSeries = {
   totalRequests: number
   totalTokens: number
   hourly: Array<{ hour: string; count: number; totalTokens: number }>
   daily: Array<{ date: string; count: number; totalTokens: number }>
+}
+
+export type SparkKeyStats = SparkUsageSeries & {
+  keyId: number
+}
+
+export type SparkTopUser = {
+  userId: number
+  netId?: string | null
+  name?: string | null
+  email?: string | null
+  requestCount: number
+  totalTokens: number
+}
+
+/** Per-key usage within a single hourly or daily bucket (aggregated endpoint only). */
+export type SparkBucketTopKey = {
+  keyId: number
+  description: string
+  count: number
+  totalTokens: number
+}
+
+export type SparkAggregatedHourlyBlock = {
+  hour: string
+  count: number
+  totalTokens: number
+  topKeys: SparkBucketTopKey[]
+}
+
+export type SparkAggregatedDailyBlock = {
+  date: string
+  count: number
+  totalTokens: number
+  topKeys: SparkBucketTopKey[]
+}
+
+/** Rollup for all keys on a course offering (GET .../spark/keys/stats). */
+export type SparkAggregatedKeysStats = {
+  keyIds: number[]
+  totalRequests: number
+  totalTokens: number
+  lastUsedAt: string | null
+  hourly: SparkAggregatedHourlyBlock[]
+  daily: SparkAggregatedDailyBlock[]
+  topUsers: SparkTopUser[]
 }
 
 // Issue Spark keys request body

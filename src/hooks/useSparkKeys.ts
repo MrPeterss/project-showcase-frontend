@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { services } from '@/services'
-import type { IssueSparkKeysData, SparkKey, SparkKeyStats } from '@/services/types'
+import type {
+  IssueSparkKeysData,
+  SparkKey,
+  SparkKeyStats,
+  SparkAggregatedKeysStats,
+} from '@/services/types'
 
 export const sparkKeys = {
   all: ['spark'] as const,
@@ -10,6 +15,8 @@ export const sparkKeys = {
   stats: () => [...sparkKeys.all, 'stats'] as const,
   statsByKey: (offeringId: number, sparkKeyId: number) =>
     [...sparkKeys.stats(), { offeringId, sparkKeyId }] as const,
+  aggregatedStatsByOffering: (offeringId: number) =>
+    [...sparkKeys.stats(), 'aggregated', { offeringId }] as const,
 }
 
 export const useSparkKeys = (offeringId: number | undefined) => {
@@ -59,6 +66,28 @@ export const useSparkKeyStats = (
   })
 }
 
+export const useSparkAggregatedKeysStats = (offeringId: number | undefined) => {
+  return useQuery({
+    queryKey: offeringId
+      ? sparkKeys.aggregatedStatsByOffering(offeringId)
+      : sparkKeys.aggregatedStatsByOffering(0),
+    enabled: !!offeringId,
+    queryFn: async (): Promise<SparkAggregatedKeysStats> => {
+      const response = await services.spark.getAggregatedKeysStats(
+        offeringId as number,
+      )
+      const result = response.data as unknown
+      if (result && typeof result === 'object' && 'totalRequests' in (result as object)) {
+        return result as SparkAggregatedKeysStats
+      }
+      if (result && typeof result === 'object' && 'data' in (result as object)) {
+        return (result as { data: SparkAggregatedKeysStats }).data
+      }
+      return result as SparkAggregatedKeysStats
+    },
+  })
+}
+
 export const useIssueSparkKeys = (offeringId: number) => {
   const queryClient = useQueryClient()
   return useMutation({
@@ -67,6 +96,9 @@ export const useIssueSparkKeys = (offeringId: number) => {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: sparkKeys.listByOffering(offeringId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: sparkKeys.aggregatedStatsByOffering(offeringId),
       })
     },
   })
@@ -83,6 +115,9 @@ export const useRevokeSparkKey = (offeringId: number) => {
       })
       queryClient.removeQueries({
         queryKey: sparkKeys.statsByKey(offeringId, sparkKeyId),
+      })
+      queryClient.invalidateQueries({
+        queryKey: sparkKeys.aggregatedStatsByOffering(offeringId),
       })
     },
   })
@@ -104,6 +139,9 @@ export const useRevokeMultipleSparkKeys = (offeringId: number) => {
         queryClient.removeQueries({
           queryKey: sparkKeys.statsByKey(offeringId, sparkKeyId),
         })
+      })
+      queryClient.invalidateQueries({
+        queryKey: sparkKeys.aggregatedStatsByOffering(offeringId),
       })
     },
   })

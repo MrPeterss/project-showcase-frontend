@@ -1,6 +1,12 @@
 import api, { apiClient } from '@/lib/api'
 import type { ApiResponse } from '@/lib/api'
-import type { SparkKey, SparkKeyStats, IssueSparkKeysData, IssueSparkKeyResult } from './types'
+import type {
+  SparkKey,
+  SparkKeyStats,
+  SparkAggregatedKeysStats,
+  IssueSparkKeysData,
+  IssueSparkKeyResult,
+} from './types'
 
 export const sparkServices = {
   getKeys: (offeringId: number): Promise<ApiResponse<SparkKey[]>> =>
@@ -19,6 +25,11 @@ export const sparkServices = {
 
   getKeyStats: (offeringId: number, sparkKeyId: number): Promise<ApiResponse<SparkKeyStats>> =>
     api.get(`/course-offerings/${offeringId}/spark/keys/${sparkKeyId}/stats`),
+
+  getAggregatedKeysStats: (
+    offeringId: number,
+  ): Promise<ApiResponse<SparkAggregatedKeysStats>> =>
+    api.get(`/course-offerings/${offeringId}/spark/keys/stats`),
 }
 
 export default sparkServices

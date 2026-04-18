@@ -10,11 +10,13 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
+import type { MouseHandlerDataParam } from 'recharts';
 import { useCourseContext } from '@/components/CourseLayout';
 import { useTeamsByOffering } from '@/hooks/useTeams';
 import {
   useSparkKeys,
   useSparkKeyStats,
+  useSparkAggregatedKeysStats,
   useIssueSparkKeys,
   useRevokeSparkKey,
   useRevokeMultipleSparkKeys,
@@ -33,12 +35,17 @@ import {
   BarChart2,
   AlertTriangle,
   Loader2,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type {
   IssueSparkKeyResult,
   IssueSparkKeysData,
+  SparkBucketTopKey,
   SparkKey,
+  SparkTopUser,
+  SparkUsageSeries,
   Team,
 } from '@/services/types';
 
@@ -102,6 +109,17 @@ function formatDate(date: string) {
     });
   } catch {
     return date;
+  }
+}
+
+function formatDateTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+  } catch {
+    return iso;
   }
 }
 
@@ -415,26 +433,53 @@ interface StatsPanel {
 
 const WEEK_SIZE = 7;
 
-function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
-  const {
-    data: stats,
-    isLoading,
-    error,
-  } = useSparkKeyStats(offeringId, sparkKeyId);
+function readBucketTopKeys(bucket: unknown): SparkBucketTopKey[] {
+  if (!bucket || typeof bucket !== 'object') return [];
+  const tk = (bucket as { topKeys?: SparkBucketTopKey[] }).topKeys;
+  return Array.isArray(tk) ? tk : [];
+}
+
+/** Recharts may report tooltip index as number or string depending on axis. */
+function tooltipIndexToNumber(state: MouseHandlerDataParam): number | undefined {
+  const raw = state.activeTooltipIndex ?? state.activeIndex;
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string') {
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return undefined;
+}
+
+type SparkUsageChartsVariant = 'single-key' | 'aggregated';
+
+function SparkUsageChartsContent({
+  stats,
+  variant = 'single-key',
+}: {
+  stats: SparkUsageSeries;
+  variant?: SparkUsageChartsVariant;
+}) {
   const [chartView, setChartView] = useState<'daily' | 'hourly'>('hourly');
   // 0 = most recent week, 1 = one week back, etc.
   const [weekOffset, setWeekOffset] = useState(0);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [userBucket, setUserBucket] = useState<{
+    kind: 'hourly' | 'daily';
+    title: string;
+    topKeys: SparkBucketTopKey[];
+  } | null>(null);
 
   // Derive hourly data early so the useMemo calls below are never conditional.
   const hourlyData = useMemo(
     () =>
-      (stats?.hourly ?? [])
+      (stats.hourly ?? [])
         .map((h) => ({
           ...h,
           ts: new Date(h.hour).getTime(),
           timeLabel: formatTimeOnly(h.hour),
           dateLabel: formatMonthDay(h.hour),
+          topKeys: readBucketTopKeys(h),
         }))
         .filter((h) => Number.isFinite(h.ts)),
     [stats],
@@ -483,27 +528,15 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
     return ticks;
   }, [hourlyData]);
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 py-6 text-sm text-gray-500">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading usage data…
-      </div>
-    );
-  }
-
-  if (error || !stats) {
-    return (
-      <div className="flex items-center gap-2 py-4 text-sm text-red-600">
-        <AlertTriangle className="h-4 w-4" />
-        Failed to load usage statistics.
-      </div>
-    );
-  }
-
   // Build a lookup so we can fill in zero-usage days
-  const dailyMap = new Map(stats.daily.map((d) => [d.date.slice(0, 10), d]));
-  const maxTokens = Math.max(0, ...stats.daily.map((d) => d.totalTokens));
+  const dailyMap = useMemo(
+    () => new Map(stats.daily.map((d) => [d.date.slice(0, 10), d])),
+    [stats.daily],
+  );
+  const maxTokens = useMemo(
+    () => Math.max(0, ...stats.daily.map((d) => d.totalTokens)),
+    [stats.daily],
+  );
 
   // Anchor the week windows to today so zero-usage days always appear
   const today = new Date();
@@ -537,21 +570,34 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
   const clampedOffset = Math.min(weekOffset, maxWeekOffset);
 
   // Generate exactly 7 calendar days for this window, zeroing missing ones
-  const weekStartDate = new Date(anchorWeekStart);
-  weekStartDate.setDate(anchorWeekStart.getDate() - clampedOffset * WEEK_SIZE);
-
-  const weeklyDailyData = Array.from({ length: WEEK_SIZE }, (_, i) => {
-    const d = new Date(weekStartDate);
-    d.setDate(weekStartDate.getDate() + i);
-    const dateStr = toLocalDateStr(d);
-    const existing = dailyMap.get(dateStr);
-    return {
-      date: dateStr,
-      count: existing?.count ?? 0,
-      totalTokens: existing?.totalTokens ?? 0,
-      label: formatDate(dateStr),
+  const weeklyDailyData = useMemo(() => {
+    const todayInner = new Date();
+    todayInner.setHours(0, 0, 0, 0);
+    const startOfWeekSunday = (d: Date) => {
+      const x = new Date(d);
+      x.setHours(0, 0, 0, 0);
+      x.setDate(x.getDate() - x.getDay());
+      return x;
     };
-  });
+    const anchorWeekStartInner = startOfWeekSunday(todayInner);
+    const weekStartDate = new Date(anchorWeekStartInner);
+    weekStartDate.setDate(
+      anchorWeekStartInner.getDate() - clampedOffset * WEEK_SIZE,
+    );
+    return Array.from({ length: WEEK_SIZE }, (_, i) => {
+      const d = new Date(weekStartDate);
+      d.setDate(weekStartDate.getDate() + i);
+      const dateStr = toLocalDateStr(d);
+      const existing = dailyMap.get(dateStr);
+      return {
+        date: dateStr,
+        count: existing?.count ?? 0,
+        totalTokens: existing?.totalTokens ?? 0,
+        label: formatDate(dateStr),
+        topKeys: readBucketTopKeys(existing),
+      };
+    });
+  }, [clampedOffset, dailyMap]);
 
   const weekLabel = `${weeklyDailyData[0].label} – ${weeklyDailyData[6].label}`;
 
@@ -565,6 +611,96 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
 
   const effectiveView =
     chartView === 'daily' && !hasDaily ? 'hourly' : chartView;
+
+  const defaultAggregatedBucket = useMemo(() => {
+    if (variant !== 'aggregated') return null;
+    const todayD = new Date();
+    todayD.setHours(0, 0, 0, 0);
+    const todayStr = toLocalDateStr(todayD);
+
+    if (effectiveView === 'daily' && weeklyDailyData.length > 0) {
+      const row =
+        weeklyDailyData.find((d) => d.date === todayStr) ??
+        weeklyDailyData.reduce((best, d) => {
+          const db = Math.abs(
+            parseLocalDate(d.date).getTime() - todayD.getTime(),
+          );
+          const bb = Math.abs(
+            parseLocalDate(best.date).getTime() - todayD.getTime(),
+          );
+          return db < bb ? d : best;
+        }, weeklyDailyData[0]);
+      return {
+        kind: 'daily' as const,
+        title: row.label,
+        topKeys: row.topKeys ?? [],
+      };
+    }
+    if (effectiveView === 'hourly' && hourlyData.length > 0) {
+      const now = new Date();
+      const sameHour = hourlyData.find((h) => {
+        const hd = new Date(h.ts);
+        return (
+          hd.getFullYear() === now.getFullYear() &&
+          hd.getMonth() === now.getMonth() &&
+          hd.getDate() === now.getDate() &&
+          hd.getHours() === now.getHours()
+        );
+      });
+      const row =
+        sameHour ??
+        hourlyData.reduce((a, b) =>
+          Math.abs(a.ts - now.getTime()) < Math.abs(b.ts - now.getTime())
+            ? a
+            : b,
+        );
+      return {
+        kind: 'hourly' as const,
+        title: `${row.dateLabel} · ${row.timeLabel}`,
+        topKeys: row.topKeys ?? [],
+      };
+    }
+    return null;
+  }, [variant, effectiveView, weeklyDailyData, hourlyData]);
+
+  const resolvedBucket = userBucket ?? defaultAggregatedBucket;
+
+  const visibleBucketTopKeys = useMemo(() => {
+    if (!resolvedBucket) return [];
+    return resolvedBucket.topKeys.filter(
+      (row) => row.totalTokens > 0 || row.count > 0,
+    );
+  }, [resolvedBucket]);
+
+  const selectedBucketDailyLabel = useMemo(() => {
+    if (
+      variant !== 'aggregated' ||
+      !resolvedBucket ||
+      resolvedBucket.kind !== 'daily'
+    ) {
+      return undefined;
+    }
+    const row = weeklyDailyData.find((d) => d.label === resolvedBucket.title);
+    return row?.label;
+  }, [variant, resolvedBucket, weeklyDailyData]);
+
+  const selectedBucketHourlyTs = useMemo(() => {
+    if (
+      variant !== 'aggregated' ||
+      !resolvedBucket ||
+      resolvedBucket.kind !== 'hourly'
+    ) {
+      return undefined;
+    }
+    const row = hourlyData.find(
+      (h) => `${h.dateLabel} · ${h.timeLabel}` === resolvedBucket.title,
+    );
+    return row?.ts;
+  }, [variant, resolvedBucket, hourlyData]);
+
+  useEffect(() => {
+    setUserBucket(null);
+  }, [chartView, weekOffset, clampedOffset, effectiveView]);
 
   return (
     <div className="space-y-4">
@@ -647,11 +783,33 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
             </select>
           </div>
 
+          {variant === 'aggregated' && (
+            <p className="mb-3 text-xs text-gray-500">
+              Click anywhere on the chart to change which time bucket is shown
+              below.
+            </p>
+          )}
+
           {effectiveView === 'daily' && hasDaily && (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart
                 data={weeklyDailyData}
                 margin={{ top: 4, right: 8, bottom: 4, left: 0 }}
+                onClick={
+                  variant === 'aggregated'
+                    ? (state) => {
+                        const idx = tooltipIndexToNumber(state);
+                        if (idx === undefined) return;
+                        const row = weeklyDailyData[idx];
+                        if (!row) return;
+                        setUserBucket({
+                          kind: 'daily',
+                          title: row.label,
+                          topKeys: row.topKeys ?? [],
+                        });
+                      }
+                    : undefined
+                }
               >
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -715,6 +873,13 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
                     }}
                   />
                 )}
+                {selectedBucketDailyLabel && (
+                  <ReferenceLine
+                    x={selectedBucketDailyLabel}
+                    stroke="#1d4ed8"
+                    strokeWidth={2}
+                  />
+                )}
                 <Line
                   type="monotone"
                   dataKey="totalTokens"
@@ -733,6 +898,21 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
               <LineChart
                 data={hourlyData}
                 margin={{ top: 4, right: 8, bottom: 4, left: 0 }}
+                onClick={
+                  variant === 'aggregated'
+                    ? (state) => {
+                        const idx = tooltipIndexToNumber(state);
+                        if (idx === undefined) return;
+                        const row = hourlyData[idx];
+                        if (!row) return;
+                        setUserBucket({
+                          kind: 'hourly',
+                          title: `${row.dateLabel} · ${row.timeLabel}`,
+                          topKeys: row.topKeys ?? [],
+                        });
+                      }
+                    : undefined
+                }
               >
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -771,6 +951,14 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
                     }}
                   />
                 ))}
+                {selectedBucketHourlyTs != null &&
+                  Number.isFinite(selectedBucketHourlyTs) && (
+                    <ReferenceLine
+                      x={selectedBucketHourlyTs}
+                      stroke="#1d4ed8"
+                      strokeWidth={2}
+                    />
+                  )}
                 <Tooltip
                   contentStyle={{ fontSize: 12, borderRadius: 6 }}
                   content={({ active, payload }) => {
@@ -817,11 +1005,227 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
               </LineChart>
             </ResponsiveContainer>
           )}
+
+          {variant === 'aggregated' && hasAnyData && (
+            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/80 p-4">
+              <h4 className="text-sm font-medium text-gray-900">
+                Top teams in this bucket
+              </h4>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {resolvedBucket?.title ?? '—'}
+              </p>
+              {visibleBucketTopKeys.length === 0 ? (
+                <p className="mt-3 text-sm text-gray-500">
+                  No teams with usage in this bucket.
+                </p>
+              ) : (
+                <div className="mt-3 overflow-hidden rounded-lg border border-gray-200 bg-white">
+                  <div className="max-h-[22rem] overflow-y-auto overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 z-10 bg-gray-50 text-left text-xs text-gray-500 shadow-sm">
+                        <tr>
+                          <th className="px-3 py-2 font-medium">Team</th>
+                          <th className="px-3 py-2 font-medium">Scope</th>
+                          <th className="px-3 py-2 text-right font-medium">
+                            Tokens
+                          </th>
+                          <th className="px-3 py-2 text-right font-medium">
+                            Requests
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {visibleBucketTopKeys.map((row) => {
+                          const { teamName, scope } = parseKeyDescription(
+                            row.description,
+                          );
+                          return (
+                            <tr
+                              key={row.keyId}
+                              className="border-t border-gray-100"
+                            >
+                              <td className="px-3 py-2 font-medium text-gray-900">
+                                {teamName}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600">
+                                {scope ?? '—'}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums text-gray-800">
+                                {row.totalTokens.toLocaleString()}
+                              </td>
+                              <td className="px-3 py-2 text-right tabular-nums text-gray-800">
+                                {row.count.toLocaleString()}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <p className="text-sm text-gray-500">No usage data available yet.</p>
       )}
     </div>
+  );
+}
+
+function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
+  const {
+    data: stats,
+    isLoading,
+    error,
+  } = useSparkKeyStats(offeringId, sparkKeyId);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 py-6 text-sm text-gray-500">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Loading usage data…
+      </div>
+    );
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-sm text-red-600">
+        <AlertTriangle className="h-4 w-4" />
+        Failed to load usage statistics.
+      </div>
+    );
+  }
+
+  return <SparkUsageChartsContent stats={stats} />;
+}
+
+function topUserLabel(u: SparkTopUser): string {
+  const n = u.name?.trim();
+  if (n) return n;
+  const e = u.email?.trim();
+  if (e) return e;
+  const net = u.netId?.trim();
+  if (net) return net;
+  return `User ${u.userId}`;
+}
+
+function SparkOfferingUsageOverview({ offeringId }: { offeringId: number }) {
+  const { data: agg, isLoading, error } =
+    useSparkAggregatedKeysStats(offeringId);
+
+  if (isLoading) {
+    return (
+      <div className="mb-8 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-8 text-sm text-gray-500">
+        <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+        Loading offering usage…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mb-8 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 text-sm text-red-800">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        Could not load usage overview.
+      </div>
+    );
+  }
+
+  if (!agg) return null;
+
+  return (
+    <div className="mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+        <h2 className="text-sm font-semibold text-gray-900">Usage overview</h2>
+        <p className="mt-0.5 text-xs text-gray-500">
+          {agg.keyIds.length} key{agg.keyIds.length !== 1 ? 's' : ''} included
+          {agg.lastUsedAt != null && (
+            <>
+              {' '}
+              · Last used{' '}
+              <span className="text-gray-700">{formatDateTime(agg.lastUsedAt)}</span>
+            </>
+          )}
+        </p>
+      </div>
+      <div className="p-4 md:p-6">
+        <SparkUsageChartsContent stats={agg} variant="aggregated" />
+        {agg.topUsers.length > 0 && (
+          <div className="mt-8">
+            <h3 className="mb-3 text-sm font-medium text-gray-900">Top users</h3>
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-left text-xs text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">User</th>
+                    <th className="px-3 py-2 font-medium">NetID</th>
+                    <th className="px-3 py-2 font-medium">Email</th>
+                    <th className="px-3 py-2 text-right font-medium">Requests</th>
+                    <th className="px-3 py-2 text-right font-medium">Tokens</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {agg.topUsers.map((u) => (
+                    <tr key={u.userId} className="border-t border-gray-100">
+                      <td className="px-3 py-2 font-medium text-gray-900">
+                        {topUserLabel(u)}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {u.netId ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600">
+                        {u.email ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-800">
+                        {u.requestCount.toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-800">
+                        {u.totalTokens.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SparkKeyCopyButton({ secretKey }: { secretKey: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(secretKey);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable
+    }
+  };
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={onCopy}
+      className="h-7 px-2 text-xs text-gray-500 hover:text-blue-600"
+      title={copied ? 'Copied' : 'Copy API key'}
+    >
+      {copied ? (
+        <Check className="mr-1 h-3.5 w-3.5" />
+      ) : (
+        <Copy className="mr-1 h-3.5 w-3.5" />
+      )}
+      {copied ? 'Copied' : 'Copy'}
+    </Button>
   );
 }
 
@@ -1267,6 +1671,41 @@ function RevokeConfirmModal({
   );
 }
 
+function sortSparkKeyList(
+  list: SparkKey[],
+  sortKey: string | null,
+  sortDir: 'asc' | 'desc',
+): SparkKey[] {
+  if (!sortKey) return list;
+  return [...list].sort((a, b) => {
+    let aVal: string | number | null = null;
+    let bVal: string | number | null = null;
+    if (sortKey === 'team') {
+      aVal = parseKeyDescription(a.description).teamName;
+      bVal = parseKeyDescription(b.description).teamName;
+    } else if (sortKey === 'scope') {
+      aVal = parseKeyDescription(a.description).scope ?? '';
+      bVal = parseKeyDescription(b.description).scope ?? '';
+    } else if (sortKey === 'limitTPM') {
+      aVal = a.limitTokensPerMinute ?? -1;
+      bVal = b.limitTokensPerMinute ?? -1;
+    } else if (sortKey === 'limitTPH') {
+      aVal = a.limitTokensPerHour ?? -1;
+      bVal = b.limitTokensPerHour ?? -1;
+    } else if (sortKey === 'status') {
+      aVal = a.isActive === false ? 0 : 1;
+      bVal = b.isActive === false ? 0 : 1;
+    }
+    if (aVal === null || bVal === null) return 0;
+    if (typeof aVal === 'string' && typeof bVal === 'string') {
+      const cmp = aVal.localeCompare(bVal);
+      return sortDir === 'asc' ? cmp : -cmp;
+    }
+    const cmp = (aVal as number) - (bVal as number);
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+}
+
 // ─── Expandable Row ──────────────────────────────────────────────────────────
 
 interface ExpandableKeyRowProps {
@@ -1277,6 +1716,8 @@ interface ExpandableKeyRowProps {
   onToggleExpand: () => void;
   onToggleSelect: () => void;
   onRevoke: () => void;
+  /** When false, the row has no bulk-select checkbox (e.g. revoked keys list). */
+  showSelection?: boolean;
 }
 
 function ExpandableKeyRow({
@@ -1287,6 +1728,7 @@ function ExpandableKeyRow({
   onToggleExpand,
   onToggleSelect,
   onRevoke,
+  showSelection = true,
 }: ExpandableKeyRowProps) {
   const { teamName, scope } = parseKeyDescription(sparkKey.description);
 
@@ -1300,13 +1742,15 @@ function ExpandableKeyRow({
       >
         {/* Checkbox */}
         <td className="w-10 px-4 py-3">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onToggleSelect}
-            className="accent-blue-600 cursor-pointer"
-            aria-label={`Select key for ${teamName}`}
-          />
+          {showSelection ? (
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              className="accent-blue-600 cursor-pointer"
+              aria-label={`Select key for ${teamName}`}
+            />
+          ) : null}
         </td>
 
         {/* Expand toggle */}
@@ -1385,6 +1829,9 @@ function ExpandableKeyRow({
               <BarChart2 className="h-3.5 w-3.5 mr-1" />
               Stats
             </Button>
+            {sparkKey.key ? (
+              <SparkKeyCopyButton secretKey={sparkKey.key} />
+            ) : null}
             {sparkKey.isActive !== false && (
               <Button
                 variant="ghost"
@@ -1433,6 +1880,7 @@ export default function CourseSpark() {
   } | null>(null);
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [revokedSectionOpen, setRevokedSectionOpen] = useState(false);
 
   const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
 
@@ -1441,37 +1889,44 @@ export default function CourseSpark() {
     [keys],
   );
 
-  const sortedKeys = useMemo(() => {
-    const list = keys ?? [];
-    if (!sortKey) return list;
-    return [...list].sort((a, b) => {
-      let aVal: string | number | null = null;
-      let bVal: string | number | null = null;
-      if (sortKey === 'team') {
-        aVal = parseKeyDescription(a.description).teamName;
-        bVal = parseKeyDescription(b.description).teamName;
-      } else if (sortKey === 'scope') {
-        aVal = parseKeyDescription(a.description).scope ?? '';
-        bVal = parseKeyDescription(b.description).scope ?? '';
-      } else if (sortKey === 'limitTPM') {
-        aVal = a.limitTokensPerMinute ?? -1;
-        bVal = b.limitTokensPerMinute ?? -1;
-      } else if (sortKey === 'limitTPH') {
-        aVal = a.limitTokensPerHour ?? -1;
-        bVal = b.limitTokensPerHour ?? -1;
-      } else if (sortKey === 'status') {
-        aVal = a.isActive === false ? 0 : 1;
-        bVal = b.isActive === false ? 0 : 1;
+  const deactivatedKeys = useMemo(
+    () => (keys ?? []).filter((k) => k.isActive === false),
+    [keys],
+  );
+
+  const sortedActiveKeys = useMemo(
+    () => sortSparkKeyList(activeKeys, sortKey, sortDir),
+    [activeKeys, sortKey, sortDir],
+  );
+
+  const sortedDeactivatedKeys = useMemo(
+    () => sortSparkKeyList(deactivatedKeys, sortKey, sortDir),
+    [deactivatedKeys, sortKey, sortDir],
+  );
+
+  const activeKeysAggregate = useMemo(() => {
+    let totalTpm = 0;
+    let totalTph = 0;
+    let hasAnyTpm = false;
+    let hasAnyTph = false;
+    for (const k of activeKeys) {
+      if (k.limitTokensPerMinute != null) {
+        totalTpm += k.limitTokensPerMinute;
+        hasAnyTpm = true;
       }
-      if (aVal === null || bVal === null) return 0;
-      if (typeof aVal === 'string' && typeof bVal === 'string') {
-        const cmp = aVal.localeCompare(bVal);
-        return sortDir === 'asc' ? cmp : -cmp;
+      if (k.limitTokensPerHour != null) {
+        totalTph += k.limitTokensPerHour;
+        hasAnyTph = true;
       }
-      const cmp = (aVal as number) - (bVal as number);
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [keys, sortKey, sortDir]);
+    }
+    return {
+      count: activeKeys.length,
+      totalTpm,
+      totalTph,
+      hasAnyTpm,
+      hasAnyTph,
+    };
+  }, [activeKeys]);
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
@@ -1592,6 +2047,8 @@ export default function CourseSpark() {
           </div>
         </div>
 
+        <SparkOfferingUsageOverview offeringId={offeringId} />
+
         {/* Table */}
         <div className="rounded-xl border border-gray-200 overflow-hidden">
           {isLoading ? (
@@ -1616,61 +2073,180 @@ export default function CourseSpark() {
               <p className="text-xs">Click "Issue Keys" to get started.</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="w-10 px-4 py-3">
-                      <input
-                        type="checkbox"
-                        checked={allActiveSelected}
-                        onChange={toggleSelectAll}
-                        className="accent-blue-600 cursor-pointer"
-                        aria-label="Select all active keys"
-                      />
-                    </th>
-                    <th className="w-8 px-2 py-3" />
-                    {(
-                      [
-                        { col: 'team', label: 'Team' },
-                        { col: 'scope', label: 'Scope' },
-                        { col: 'limitTPM', label: 'Limit / min' },
-                        { col: 'limitTPH', label: 'Limit / hr' },
-                        { col: 'status', label: 'Status' },
-                      ] as const
-                    ).map(({ col, label }) => (
-                      <th
-                        key={col}
-                        onClick={() => handleSort(col)}
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer select-none hover:bg-gray-100"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {label}
-                          <SortIcon col={col} />
-                        </div>
+            <>
+              <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">
+                  Active keys (totals)
+                </p>
+                <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2 text-sm text-gray-800">
+                  <span>
+                    <span className="font-semibold tabular-nums">
+                      {activeKeysAggregate.count}
+                    </span>{' '}
+                    <span className="text-gray-600">
+                      key{activeKeysAggregate.count !== 1 ? 's' : ''}
+                    </span>
+                  </span>
+                  <span>
+                    <span className="text-gray-500">Σ limit / min</span>{' '}
+                    <span className="font-medium tabular-nums text-gray-900">
+                      {activeKeysAggregate.hasAnyTpm
+                        ? activeKeysAggregate.totalTpm.toLocaleString()
+                        : '—'}
+                    </span>
+                  </span>
+                  <span>
+                    <span className="text-gray-500">Σ limit / hr</span>{' '}
+                    <span className="font-medium tabular-nums text-gray-900">
+                      {activeKeysAggregate.hasAnyTph
+                        ? activeKeysAggregate.totalTph.toLocaleString()
+                        : '—'}
+                    </span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="w-10 px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={allActiveSelected}
+                          onChange={toggleSelectAll}
+                          disabled={activeKeys.length === 0}
+                          className="accent-blue-600 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Select all active keys"
+                        />
                       </th>
-                    ))}
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedKeys.map((key) => (
-                    <ExpandableKeyRow
-                      key={key.id}
-                      sparkKey={key}
-                      offeringId={offeringId}
-                      isExpanded={expandedKeyId === key.id}
-                      isSelected={selectedKeyIds.has(key.id)}
-                      onToggleExpand={() => toggleExpand(key.id)}
-                      onToggleSelect={() => toggleSelect(key.id)}
-                      onRevoke={() => handleRevokeSingle(key)}
+                      <th className="w-8 px-2 py-3" />
+                      {(
+                        [
+                          { col: 'team', label: 'Team' },
+                          { col: 'scope', label: 'Scope' },
+                          { col: 'limitTPM', label: 'Limit / min' },
+                          { col: 'limitTPH', label: 'Limit / hr' },
+                          { col: 'status', label: 'Status' },
+                        ] as const
+                      ).map(({ col, label }) => (
+                        <th
+                          key={col}
+                          onClick={() => handleSort(col)}
+                          className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer select-none hover:bg-gray-100"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            {label}
+                            <SortIcon col={col} />
+                          </div>
+                        </th>
+                      ))}
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedActiveKeys.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-4 py-10 text-center text-sm text-gray-500"
+                        >
+                          No active keys. Issue new keys or check revoked keys
+                          below.
+                        </td>
+                      </tr>
+                    ) : (
+                      sortedActiveKeys.map((key) => (
+                        <ExpandableKeyRow
+                          key={key.id}
+                          sparkKey={key}
+                          offeringId={offeringId}
+                          isExpanded={expandedKeyId === key.id}
+                          isSelected={selectedKeyIds.has(key.id)}
+                          onToggleExpand={() => toggleExpand(key.id)}
+                          onToggleSelect={() => toggleSelect(key.id)}
+                          onRevoke={() => handleRevokeSingle(key)}
+                        />
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {deactivatedKeys.length > 0 && (
+                <div className="border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setRevokedSectionOpen((o) => !o)}
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                    aria-expanded={revokedSectionOpen}
+                  >
+                    <ChevronDown
+                      className={cn(
+                        'h-4 w-4 shrink-0 text-gray-500 transition-transform',
+                        revokedSectionOpen && 'rotate-180',
+                      )}
                     />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                    Revoked keys
+                    <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-normal text-gray-700 tabular-nums">
+                      {deactivatedKeys.length}
+                    </span>
+                  </button>
+                  {revokedSectionOpen && (
+                    <div className="overflow-x-auto border-t border-gray-100 bg-gray-50/60">
+                      <table className="w-full">
+                        <thead className="border-b border-gray-200 bg-gray-100">
+                          <tr>
+                            <th className="w-10 px-4 py-3" aria-hidden />
+                            <th className="w-8 px-2 py-3" />
+                            {(
+                              [
+                                { col: 'team', label: 'Team' },
+                                { col: 'scope', label: 'Scope' },
+                                { col: 'limitTPM', label: 'Limit / min' },
+                                { col: 'limitTPH', label: 'Limit / hr' },
+                                { col: 'status', label: 'Status' },
+                              ] as const
+                            ).map(({ col, label }) => (
+                              <th
+                                key={col}
+                                onClick={() => handleSort(col)}
+                                className="px-4 py-3 text-left text-xs font-medium text-gray-500 cursor-pointer select-none hover:bg-gray-200/80"
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  {label}
+                                  <SortIcon col={col} />
+                                </div>
+                              </th>
+                            ))}
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedDeactivatedKeys.map((key) => (
+                            <ExpandableKeyRow
+                              key={key.id}
+                              sparkKey={key}
+                              offeringId={offeringId}
+                              isExpanded={expandedKeyId === key.id}
+                              isSelected={false}
+                              onToggleExpand={() => toggleExpand(key.id)}
+                              onToggleSelect={() => {}}
+                              onRevoke={() => handleRevokeSingle(key)}
+                              showSelection={false}
+                            />
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
 
