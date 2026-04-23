@@ -439,6 +439,31 @@ function readBucketTopKeys(bucket: unknown): SparkBucketTopKey[] {
   return Array.isArray(tk) ? tk : [];
 }
 
+/** Sum per-key usage across all buckets, merge by keyId, sort most usage first. */
+function aggregateTopKeysAllTime(blocks: unknown[]): SparkBucketTopKey[] {
+  const map = new Map<number, SparkBucketTopKey>();
+  for (const block of blocks) {
+    for (const row of readBucketTopKeys(block)) {
+      const prev = map.get(row.keyId);
+      if (!prev) {
+        map.set(row.keyId, { ...row });
+      } else {
+        map.set(row.keyId, {
+          ...prev,
+          count: prev.count + row.count,
+          totalTokens: prev.totalTokens + row.totalTokens,
+        });
+      }
+    }
+  }
+  return Array.from(map.values())
+    .filter((r) => r.count > 0 || r.totalTokens > 0)
+    .sort(
+      (a, b) =>
+        b.totalTokens - a.totalTokens || b.count - a.count || a.keyId - b.keyId,
+    );
+}
+
 /** Recharts may report tooltip index as number or string depending on axis. */
 function tooltipIndexToNumber(state: MouseHandlerDataParam): number | undefined {
   const raw = state.activeTooltipIndex ?? state.activeIndex;
@@ -469,6 +494,7 @@ function SparkUsageChartsContent({
     title: string;
     topKeys: SparkBucketTopKey[];
   } | null>(null);
+  const [showAllTimeTopTeams, setShowAllTimeTopTeams] = useState(false);
 
   // Derive hourly data early so the useMemo calls below are never conditional.
   const hourlyData = useMemo(
@@ -671,6 +697,28 @@ function SparkUsageChartsContent({
       (row) => row.totalTokens > 0 || row.count > 0,
     );
   }, [resolvedBucket]);
+
+  const allTimeTopTeamsRows = useMemo(() => {
+    if (variant !== 'aggregated') return [];
+    const daily = stats.daily ?? [];
+    const hourly = stats.hourly ?? [];
+    const blocks =
+      daily.length > 0 ? daily : hourly.length > 0 ? hourly : [];
+    return aggregateTopKeysAllTime(blocks);
+  }, [variant, stats.daily, stats.hourly]);
+
+  const allTimeTopTeamsSource: 'daily' | 'hourly' | 'none' = useMemo(() => {
+    if (variant !== 'aggregated') return 'none';
+    const daily = stats.daily ?? [];
+    const hourly = stats.hourly ?? [];
+    if (daily.length > 0) return 'daily';
+    if (hourly.length > 0) return 'hourly';
+    return 'none';
+  }, [variant, stats.daily, stats.hourly]);
+
+  const visibleTopTeamsRows = showAllTimeTopTeams
+    ? allTimeTopTeamsRows
+    : visibleBucketTopKeys;
 
   const selectedBucketDailyLabel = useMemo(() => {
     if (
@@ -1008,13 +1056,32 @@ function SparkUsageChartsContent({
 
           {variant === 'aggregated' && hasAnyData && (
             <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50/80 p-4">
-              <h4 className="text-sm font-medium text-gray-900">
-                Top teams in this bucket
-              </h4>
-              <p className="mt-0.5 text-xs text-gray-500">
-                {resolvedBucket?.title ?? '—'}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <h4 className="text-sm font-medium text-gray-900">
+                  Top teams in this bucket
+                </h4>
+                <label className="flex cursor-pointer select-none items-center gap-2 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={showAllTimeTopTeams}
+                    onChange={(e) => setShowAllTimeTopTeams(e.target.checked)}
+                    className="accent-blue-600"
+                  />
+                  <span className="text-xs text-gray-600">
+                    All time totals (per key)
+                  </span>
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-gray-500">
+                {showAllTimeTopTeams
+                  ? allTimeTopTeamsSource === 'daily'
+                    ? 'All keys ranked by total tokens, summed across every day in this report.'
+                    : allTimeTopTeamsSource === 'hourly'
+                      ? 'All keys ranked by total tokens, summed across every hour in this report (daily history was empty).'
+                      : '—'
+                  : (resolvedBucket?.title ?? '—')}
               </p>
-              {visibleBucketTopKeys.length === 0 ? (
+              {visibleTopTeamsRows.length === 0 ? (
                 <p className="mt-3 text-sm text-gray-500">
                   No teams with usage in this bucket.
                 </p>
@@ -1035,7 +1102,7 @@ function SparkUsageChartsContent({
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleBucketTopKeys.map((row) => {
+                        {visibleTopTeamsRows.map((row) => {
                           const { teamName, scope } = parseKeyDescription(
                             row.description,
                           );
