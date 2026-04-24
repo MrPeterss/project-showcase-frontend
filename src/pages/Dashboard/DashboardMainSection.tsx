@@ -1659,7 +1659,9 @@ export default function DashboardMainSection({
             onToggle={setIsBuildLogsOpen}
             maxBodyHeightClass="max-h-80"
           >
-          {isBuildLogsStreaming && !streamStarted ? (
+          {isBuildLogsStreaming &&
+          !streamStarted &&
+          buildLogs.length === 0 ? (
             <div className="font-mono text-sm text-gray-600 p-4">
               <Loader2 className="h-4 w-4 animate-spin inline-block mr-2" />
               Connecting to build logs stream...

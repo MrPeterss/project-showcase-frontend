@@ -36,6 +36,25 @@ export interface ContainerLogsResponse {
   logs: string // Newline-separated log lines
 }
 
+/** Text to show in build logs for deploy-streaming `type: "queue"` events. */
+function messageFromQueueEvent(parsed: Record<string, unknown>): string | null {
+  if (typeof parsed.data === 'string' && parsed.data.trim()) {
+    return parsed.data.trim()
+  }
+  if (typeof parsed.message === 'string' && parsed.message.trim()) {
+    return parsed.message.trim()
+  }
+  if (typeof parsed.status === 'string' && parsed.status.trim()) {
+    return parsed.status.trim()
+  }
+  if (parsed.position != null) {
+    const pos = String(parsed.position)
+    const total = parsed.total
+    return `In queue (position ${pos}${total != null ? ` of ${String(total)}` : ''})`
+  }
+  return null
+}
+
 export const projectServices = {
   // Deploy a project (spin up container) - streaming version
   // Note: This returns a ReadableStream, not a Promise
@@ -140,6 +159,22 @@ export const projectServices = {
                 onStreamStarted()
               }
               // Continue to next line
+              continue
+            }
+
+            if (parsed.type === 'queue') {
+              const queueText = messageFromQueueEvent(
+                parsed as unknown as Record<string, unknown>
+              )
+              if (queueText) {
+                logIdCounter += 1
+                onLog({
+                  id: logIdCounter,
+                  timestamp: new Date().toISOString(),
+                  message: queueText,
+                  level: 'INFO',
+                })
+              }
               continue
             }
 
@@ -284,7 +319,20 @@ export const projectServices = {
       if (buffer.trim()) {
         try {
           const parsed = JSON.parse(buffer)
-          if (parsed.type === 'log' && parsed.data) {
+          if (parsed.type === 'queue') {
+            const queueText = messageFromQueueEvent(
+              parsed as unknown as Record<string, unknown>
+            )
+            if (queueText) {
+              logIdCounter += 1
+              onLog({
+                id: logIdCounter,
+                timestamp: new Date().toISOString(),
+                message: queueText,
+                level: 'INFO',
+              })
+            }
+          } else if (parsed.type === 'log' && parsed.data) {
             // Process remaining log in buffer
             let logMessage = parsed.data
             logMessage = logMessage.replace(/\u001b\[[0-9;]*m/g, '')
