@@ -6,6 +6,24 @@ import type { ParsedLogLine } from '@/services/projects'
 // Base API URL - matches api.ts
 const API_BASE_URL = '/api'
 
+/** True if this default-SSE `data:` payload should not be shown as a log line (heartbeats). */
+function isHeartbeatSseData(data: string): boolean {
+  const lower = data.toLowerCase()
+  if (lower === 'ping' || lower === 'pong' || lower === 'keepalive' || lower === 'keep-alive') {
+    return true
+  }
+  try {
+    const parsed = JSON.parse(data) as { type?: string }
+    const t = typeof parsed.type === 'string' ? parsed.type.toLowerCase() : ''
+    if (t === 'ping' || t === 'pong' || t === 'heartbeat' || t === 'keepalive') {
+      return true
+    }
+  } catch {
+    // not JSON
+  }
+  return false
+}
+
 /**
  * Hook for streaming build logs during deployment
  */
@@ -44,6 +62,12 @@ export function useStreamingBuildLogs(
       url,
       (data: string) => {
         try {
+          const trimmed = data.trim()
+          if (!trimmed) return
+          // Ignore heartbeat / ping payloads on the default `message` event (see SSE comment
+          // lines or a custom `event:` name on the server to avoid delivering pings here)
+          if (isHeartbeatSseData(trimmed)) return
+
           // Parse the incoming log line
           const lines = data.split('\n').filter((line: string) => line.trim())
           const newLogs: ParsedLogLine[] = lines.map((line: string) => {
