@@ -92,6 +92,39 @@ export interface MigrateProjectResponse {
   ports: Record<string, any> // Port mappings
 }
 
+// Admin system info endpoints
+export interface AdminSystemStreamReadyEvent {
+  ok: true
+  timestamp: string
+}
+
+export interface AdminSystemStreamStatsEvent {
+  timestamp: string
+  cpu: Record<string, unknown>
+  memory: Record<string, unknown>
+}
+
+export interface AdminSystemStreamErrorEvent {
+  message: string
+  timestamp: string
+}
+
+export interface AdminFilesystemUsage {
+  fs: string
+  type: string
+  mount: string
+  size: number | string
+  used: number | string
+  available: number | string
+  use: string
+  rw: boolean
+}
+
+export interface AdminSystemStorageResponse {
+  timestamp: string
+  filesystems: AdminFilesystemUsage[]
+}
+
 export const adminServices = {
   // Get all projects organized by team
   getProjects: (): Promise<ApiResponse<ProjectsResponse>> =>
@@ -104,6 +137,10 @@ export const adminServices = {
   // Manual pruning (prune all untagged, non-running projects)
   pruneProjects: (): Promise<ApiResponse<PruneResponse>> =>
     api.post('/admin/projects/prune'),
+
+  // Get disk / filesystem usage (admin only)
+  getSystemStorage: (): Promise<ApiResponse<AdminSystemStorageResponse>> =>
+    api.get('/admin/system/storage'),
 
   // Update user name (admin only)
   updateUserName: (

@@ -55,6 +55,11 @@ export type {
   AdminProject,
   ProjectDataFile,
   PruneProjectResponse,
+  AdminSystemStorageResponse,
+  AdminFilesystemUsage,
+  AdminSystemStreamReadyEvent,
+  AdminSystemStreamStatsEvent,
+  AdminSystemStreamErrorEvent,
   MigrateProjectData,
   MigrateProjectResponse,
 } from './admin'

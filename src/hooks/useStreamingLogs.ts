@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { tokenManager } from '@/lib/tokenManager'
-import { createEventSource, closeEventSource } from '@/lib/streaming'
+import { createSseStream, type SseStreamConnection } from '@/lib/streaming'
 import type { ParsedLogLine } from '@/services/projects'
 
 // Base API URL - matches api.ts
@@ -34,7 +34,7 @@ export function useStreamingBuildLogs(
   const [logs, setLogs] = useState<ParsedLogLine[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [error, setError] = useState<Error | null>(null)
-  const eventSourceRef = useRef<EventSource | null>(null)
+  const streamRef = useRef<SseStreamConnection | null>(null)
   const logIdCounterRef = useRef(0)
 
   useEffect(() => {
@@ -48,9 +48,8 @@ export function useStreamingBuildLogs(
     }
 
     // Close existing connection if any
-    if (eventSourceRef.current) {
-      closeEventSource(eventSourceRef.current)
-    }
+    streamRef.current?.close()
+    streamRef.current = null
 
     setIsStreaming(true)
     setError(null)
@@ -58,21 +57,26 @@ export function useStreamingBuildLogs(
     logIdCounterRef.current = 0
 
     const url = `${API_BASE_URL}/projects/${projectId}/build-logs/stream`
-    const eventSource = createEventSource(
-      url,
-      (data: string) => {
+    const stream = createSseStream(url, {
+      onOpen: () => setIsStreaming(true),
+      onError: (err) => {
+        console.error('SSE stream error:', err)
+        setError(new Error('Failed to stream build logs'))
+        setIsStreaming(false)
+      },
+      onMessage: (data: string) => {
         try {
           const trimmed = data.trim()
           if (!trimmed) return
-          // Ignore heartbeat / ping payloads on the default `message` event (see SSE comment
-          // lines or a custom `event:` name on the server to avoid delivering pings here)
           if (isHeartbeatSseData(trimmed)) return
 
-          // Parse the incoming log line
+          // Parse the incoming log line(s)
           const lines = data.split('\n').filter((line: string) => line.trim())
           const newLogs: ParsedLogLine[] = lines.map((line: string) => {
             logIdCounterRef.current += 1
-            const timestampMatch = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)/)
+            const timestampMatch = line.match(
+              /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?)/
+            )
             let timestamp = ''
             let message = line
             let level: 'INFO' | 'WARN' | 'ERROR' | undefined
@@ -85,7 +89,10 @@ export function useStreamingBuildLogs(
             const messageUpper = message.toUpperCase()
             if (messageUpper.includes('ERROR') || messageUpper.includes('ERR')) {
               level = 'ERROR'
-            } else if (messageUpper.includes('WARN') || messageUpper.includes('WARNING')) {
+            } else if (
+              messageUpper.includes('WARN') ||
+              messageUpper.includes('WARNING')
+            ) {
               level = 'WARN'
             } else {
               level = 'INFO'
@@ -104,21 +111,13 @@ export function useStreamingBuildLogs(
           console.error('Error parsing log data:', err)
         }
       },
-      (err: Event) => {
-        console.error('EventSource error:', err)
-        setError(new Error('Failed to stream build logs'))
-        setIsStreaming(false)
-      },
-      () => {
-        setIsStreaming(true)
-      }
-    )
+    })
 
-    eventSourceRef.current = eventSource
+    streamRef.current = stream
 
     return () => {
-      closeEventSource(eventSourceRef.current)
-      eventSourceRef.current = null
+      streamRef.current?.close()
+      streamRef.current = null
       setIsStreaming(false)
     }
   }, [enabled, projectId])

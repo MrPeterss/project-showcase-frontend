@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Card,
@@ -16,6 +16,10 @@ import type {
   TeamWithProjects,
   AdminTeam,
   AdminProject,
+  AdminSystemStorageResponse,
+  AdminSystemStreamReadyEvent,
+  AdminSystemStreamStatsEvent,
+  AdminSystemStreamErrorEvent,
 } from '@/services/admin';
 import { getStatusBadge } from '@/pages/Dashboard/shared';
 import {
@@ -31,6 +35,9 @@ import {
 } from 'lucide-react';
 import { SortableTable } from '@/components/ui/sortable-table';
 import type { ColumnDef } from '@/components/ui/sortable-table';
+import { API_BASE_URL } from '@/lib/api';
+import { createSseStream, type SseStreamConnection } from '@/lib/streaming';
+import CollapsibleCard from '@/components/CollapsibleCard';
 
 // Helper to format team context
 function formatTeamContext(team: AdminTeam): string {
@@ -46,6 +53,63 @@ const formatDate = (timestamp: string | null | undefined): string => {
   return date.toLocaleString();
 };
 
+function readNumericPercentLike(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    // accept 0..1 or 0..100, normalize to 0..100
+    if (value >= 0 && value <= 1) return value * 100;
+    if (value >= 0 && value <= 100) return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    // e.g. "12.3%" or "12.3"
+    const maybe = trimmed.endsWith('%') ? trimmed.slice(0, -1) : trimmed;
+    const n = Number(maybe);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return '—';
+  const abs = Math.abs(bytes);
+  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let u = 0;
+  let n = abs;
+  while (n >= 1024 && u < units.length - 1) {
+    n /= 1024;
+    u += 1;
+  }
+  const sign = bytes < 0 ? '-' : '';
+  const value =
+    n >= 100 ? n.toFixed(0) : n >= 10 ? n.toFixed(1) : n.toFixed(2);
+  return `${sign}${value} ${units[u]}`;
+}
+
+function progressColorClass(percent: number | null | undefined): string {
+  const p = percent ?? 0;
+  if (p > 95) return 'bg-red-600';
+  if (p > 75) return 'bg-orange-500';
+  if (p > 50) return 'bg-yellow-500';
+  return 'bg-green-600';
+}
+
 export default function Admin() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -60,12 +124,30 @@ export default function Admin() {
     stopping: Set<number>;
     pruning: Set<number>;
     manualPruning: boolean;
+    systemStorage: boolean;
   }>({
     projects: false,
     stopping: new Set(),
     pruning: new Set(),
     manualPruning: false,
+    systemStorage: false,
   });
+
+  const systemStreamRef = useRef<SseStreamConnection | null>(null);
+  const [systemStreamStatus, setSystemStreamStatus] = useState<
+    'connecting' | 'connected' | 'error'
+  >('connecting');
+  const [systemStreamError, setSystemStreamError] = useState<string | null>(
+    null
+  );
+  const [systemStats, setSystemStats] = useState<AdminSystemStreamStatsEvent | null>(
+    null
+  );
+
+  const [systemStorage, setSystemStorage] = useState<AdminSystemStorageResponse | null>(
+    null
+  );
+  const [systemStorageError, setSystemStorageError] = useState<string | null>(null);
 
   // Redirect non-admins
   useEffect(() => {
@@ -90,12 +172,189 @@ export default function Admin() {
     }
   };
 
+  const fetchSystemStorage = async () => {
+    setLoading((prev) => ({ ...prev, systemStorage: true }));
+    setSystemStorageError(null);
+    try {
+      const response = await services.admin.getSystemStorage();
+      setSystemStorage(response.data);
+    } catch (error) {
+      console.error('Error fetching system storage:', error);
+      setSystemStorage(null);
+      setSystemStorageError('Failed to fetch filesystem usage');
+    } finally {
+      setLoading((prev) => ({ ...prev, systemStorage: false }));
+    }
+  };
+
   // Load data on mount
   useEffect(() => {
     if (user?.role === 'ADMIN') {
       fetchProjects();
+      fetchSystemStorage();
     }
   }, [user]);
+
+  // Stream CPU + memory (SSE)
+  useEffect(() => {
+    if (!user || user.role !== 'ADMIN') return;
+
+    // Close any previous connection
+    if (systemStreamRef.current) {
+      systemStreamRef.current.close();
+      systemStreamRef.current = null;
+    }
+
+    setSystemStreamStatus('connecting');
+    setSystemStreamError(null);
+
+    const streamUrl = `${API_BASE_URL}/admin/system/stream`;
+    const stream = createSseStream(streamUrl, {
+      onOpen: () => setSystemStreamStatus('connected'),
+      onError: () => {
+        setSystemStreamStatus('error');
+        setSystemStreamError('SSE connection error');
+      },
+      onEvent: (evt) => {
+        if (evt.event === 'ready') {
+          try {
+            JSON.parse(evt.data) as AdminSystemStreamReadyEvent;
+            setSystemStreamStatus('connected');
+            setSystemStreamError(null);
+          } catch {
+            // ignore
+          }
+          return;
+        }
+
+        if (evt.event === 'stats') {
+          try {
+            const parsed = JSON.parse(evt.data) as AdminSystemStreamStatsEvent;
+            setSystemStats(parsed);
+            setSystemStreamStatus('connected');
+            setSystemStreamError(null);
+          } catch (err) {
+            console.error('Failed to parse system stats SSE payload:', err);
+          }
+          return;
+        }
+
+        if (evt.event === 'error') {
+          try {
+            const parsed = JSON.parse(evt.data) as AdminSystemStreamErrorEvent;
+            setSystemStreamStatus('error');
+            setSystemStreamError(parsed.message || 'System stream error');
+          } catch {
+            setSystemStreamStatus('error');
+            setSystemStreamError('System stream error');
+          }
+        }
+      },
+    });
+
+    systemStreamRef.current = stream;
+
+    return () => {
+      stream.close();
+      if (systemStreamRef.current === stream) systemStreamRef.current = null;
+    };
+  }, [user]);
+
+  const cpuDetails = useMemo(() => {
+    const cpu = (systemStats?.cpu ?? null) as Record<string, unknown> | null;
+    if (!cpu) return null;
+
+    const smoothed = readRecord(cpu.smoothed);
+
+    const currentLoad =
+      readFiniteNumber(smoothed?.currentLoad) ?? readFiniteNumber(cpu.currentLoad);
+    const user = readFiniteNumber(smoothed?.user) ?? readFiniteNumber(cpu.user);
+    const system =
+      readFiniteNumber(smoothed?.system) ?? readFiniteNumber(cpu.system);
+    const idle =
+      readNumericPercentLike(smoothed?.idle) ?? readNumericPercentLike(cpu.idle);
+
+    const loadFromIdle = idle !== null ? 100 - idle : null;
+
+    return {
+      isSmoothed: !!smoothed,
+      // Prefer 100-idle to align with backend reporting; fall back to currentLoad.
+      currentLoadPercent:
+        loadFromIdle !== null ? loadFromIdle : currentLoad !== null ? currentLoad * 100 : null,
+      userPercent: user !== null ? readNumericPercentLike(user) : null,
+      systemPercent: system !== null ? readNumericPercentLike(system) : null,
+      idlePercent: idle,
+    };
+  }, [systemStats]);
+
+  const cpuCores = useMemo(() => {
+    const cpu = (systemStats?.cpu ?? null) as Record<string, unknown> | null;
+    if (!cpu) return [];
+    const coresRaw = cpu.cores;
+    if (!Array.isArray(coresRaw)) return [];
+
+    return coresRaw
+      .map((c) => c as Record<string, unknown>)
+      .map((c) => {
+        const smoothed = readRecord(c.smoothed);
+        const core = readFiniteNumber(c.core);
+        const load = readFiniteNumber(smoothed?.load) ?? readFiniteNumber(c.load);
+        const user = readFiniteNumber(smoothed?.user) ?? readFiniteNumber(c.user);
+        const system =
+          readFiniteNumber(smoothed?.system) ?? readFiniteNumber(c.system);
+        const idle =
+          readNumericPercentLike(smoothed?.idle) ?? readNumericPercentLike(c.idle);
+
+        const loadFromIdle = idle !== null ? 100 - idle : null;
+        return {
+          core: core ?? null,
+          // Prefer 100-idle to align with overall display; fall back to load.
+          loadPercent: loadFromIdle !== null ? loadFromIdle : load !== null ? load * 100 : null,
+          userPercent: user !== null ? user * 100 : null,
+          systemPercent: system !== null ? system * 100 : null,
+          idlePercent: idle,
+        };
+      })
+      .filter((c) => c.core !== null)
+      .sort((a, b) => (a.core ?? 0) - (b.core ?? 0));
+  }, [systemStats]);
+
+  const memoryDetails = useMemo(() => {
+    const mem = (systemStats?.memory ?? null) as Record<string, unknown> | null;
+    if (!mem) return null;
+
+    const total = readFiniteNumber(mem.total);
+    const used = readFiniteNumber(mem.used);
+    const available = readFiniteNumber(mem.available);
+    const free = readFiniteNumber(mem.free);
+    const active = readFiniteNumber(mem.active);
+
+    const swaptotal = readFiniteNumber(mem.swaptotal);
+    const swapused = readFiniteNumber(mem.swapused);
+    const swapfree = readFiniteNumber(mem.swapfree);
+
+    const percentUsed =
+      total && active !== null && total > 0 ? (active / total) * 100 : null;
+
+    const swapPercentUsed =
+      swaptotal && swapused !== null && swaptotal > 0 ? (swapused / swaptotal) * 100 : null;
+
+    return {
+      total,
+      used,
+      available,
+      free,
+      active,
+      swaptotal,
+      swapused,
+      swapfree,
+      percentUsed,
+      swapPercentUsed,
+    };
+  }, [systemStats]);
+
+  // "Live" indicator should be time-based (not load-based). We use a pulse animation
+  // that visually interpolates between deeper red and lighter red.
 
   // Toggle team expanded
   const toggleTeamExpanded = (teamId: number) => {
@@ -451,6 +710,297 @@ export default function Admin() {
 
   return (
     <div className="container mx-auto p-6">
+      <Card className="mb-6">
+        <CardHeader className="text-left">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle>System resources</CardTitle>
+              <CardDescription className="mt-1">
+                Live CPU + memory and on-demand filesystem usage.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {systemStreamStatus === 'connected' ? (
+                <Badge
+                  variant="outline"
+                  className="border border-red-700 bg-red-600 text-white animate-pulse"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-white/90" />
+                    Live
+                  </span>
+                </Badge>
+              ) : (
+                <Badge
+                  variant={systemStreamStatus === 'connecting' ? 'secondary' : 'destructive'}
+                >
+                  {systemStreamStatus === 'connecting' ? 'Connecting' : 'Offline'}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {systemStreamError && (
+            <div className="text-sm text-red-600">{systemStreamError}</div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-lg border p-4">
+              <div className="text-xs text-muted-foreground">CPU</div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums">
+                {cpuDetails?.currentLoadPercent !== null &&
+                cpuDetails?.currentLoadPercent !== undefined
+                  ? `${cpuDetails.currentLoadPercent.toFixed(1)}%`
+                  : '—'}
+              </div>
+              <div className="mt-2 h-2 w-full rounded-full bg-gray-100">
+                <div
+                  className={`h-2 rounded-full ${progressColorClass(
+                    cpuDetails?.currentLoadPercent ?? 0
+                  )}`}
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      Math.max(0, cpuDetails?.currentLoadPercent ?? 0)
+                    )}%`,
+                  }}
+                />
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground tabular-nums">
+                <span>
+                  User:{' '}
+                  {cpuDetails?.userPercent !== null &&
+                  cpuDetails?.userPercent !== undefined
+                    ? `${cpuDetails.userPercent.toFixed(1)}%`
+                    : '—'}
+                </span>
+                {' · '}
+                <span>
+                  System:{' '}
+                  {cpuDetails?.systemPercent !== null &&
+                  cpuDetails?.systemPercent !== undefined
+                    ? `${cpuDetails.systemPercent.toFixed(1)}%`
+                    : '—'}
+                </span>
+                {' · '}
+                <span>
+                  Idle:{' '}
+                  {cpuDetails?.idlePercent !== null &&
+                  cpuDetails?.idlePercent !== undefined
+                    ? `${cpuDetails.idlePercent.toFixed(1)}%`
+                    : '—'}
+                </span>
+              </div>
+              {cpuCores.length > 0 && (
+                <div className="mt-4">
+                  <CollapsibleCard
+                    title={`Core details (${cpuCores.length})`}
+                    defaultOpen={false}
+                    maxBodyHeightClass="max-h-64"
+                  >
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {cpuCores.map((c) => (
+                        <div
+                          key={`core-${c.core}`}
+                          className="rounded-md border bg-white p-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs font-mono text-muted-foreground">
+                              Core {c.core}
+                            </div>
+                            <div className="text-xs tabular-nums text-muted-foreground">
+                              {c.loadPercent !== null
+                                ? `${c.loadPercent.toFixed(1)}%`
+                                : '—'}
+                            </div>
+                          </div>
+                          <div className="mt-1 h-1.5 w-full rounded-full bg-gray-100">
+                            <div
+                            className={`h-1.5 rounded-full ${progressColorClass(
+                              c.loadPercent ?? 0
+                            )}`}
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.max(0, c.loadPercent ?? 0)
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="mt-1 text-[11px] tabular-nums text-muted-foreground">
+                            <span>
+                              U:{' '}
+                              {c.userPercent !== null
+                                ? `${c.userPercent.toFixed(1)}%`
+                                : '—'}
+                            </span>
+                            {' · '}
+                            <span>
+                              S:{' '}
+                              {c.systemPercent !== null
+                                ? `${c.systemPercent.toFixed(1)}%`
+                                : '—'}
+                            </span>
+                            {' · '}
+                            <span>
+                              I:{' '}
+                              {c.idlePercent !== null
+                                ? `${c.idlePercent.toFixed(1)}%`
+                                : '—'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CollapsibleCard>
+                </div>
+              )}
+            </div>
+            <div className="rounded-lg border p-4">
+              <div className="text-xs text-muted-foreground">Memory</div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums">
+                {memoryDetails?.percentUsed !== null &&
+                memoryDetails?.percentUsed !== undefined
+                  ? `${memoryDetails.percentUsed.toFixed(1)}%`
+                  : '—'}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="text-[11px] text-muted-foreground tabular-nums w-10">
+                  Mem
+                </div>
+                <div className="h-2 w-full rounded-full bg-gray-100">
+                  <div
+                    className={`h-2 rounded-full ${progressColorClass(
+                      memoryDetails?.percentUsed ?? 0
+                    )}`}
+                    style={{
+                      width: `${Math.min(
+                        100,
+                        Math.max(0, memoryDetails?.percentUsed ?? 0)
+                      )}%`,
+                    }}
+                  />
+                </div>
+              </div>
+              {memoryDetails?.swapPercentUsed !== null &&
+                memoryDetails?.swapPercentUsed !== undefined && (
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className="text-[11px] text-muted-foreground tabular-nums w-10">
+                      Swp
+                    </div>
+                    <div className="h-1 w-full rounded-full bg-gray-100">
+                      <div
+                        className={`h-1 rounded-full ${progressColorClass(
+                          memoryDetails.swapPercentUsed
+                        )}`}
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(0, memoryDetails.swapPercentUsed)
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+              <div className="mt-2 text-xs text-muted-foreground tabular-nums space-y-1">
+                <div>
+                  Active: {formatBytes(memoryDetails?.active ?? null)} /{' '}
+                  {formatBytes(memoryDetails?.total ?? null)}
+                </div>
+                <div>
+                  Available: {formatBytes(memoryDetails?.available ?? null)}
+                  {memoryDetails?.used !== null && memoryDetails?.used !== undefined
+                    ? ` · Used: ${formatBytes(memoryDetails.used)}`
+                    : ''}
+                </div>
+                {(memoryDetails?.swaptotal ?? null) !== null && (
+                  <div>
+                    Swap: {formatBytes(memoryDetails?.swapused ?? null)} /{' '}
+                    {formatBytes(memoryDetails?.swaptotal ?? null)}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border">
+            <div className="flex items-center justify-between border-b px-4 py-3">
+              <div className="flex items-center gap-2">
+                <HardDrive className="h-4 w-4 text-muted-foreground" />
+                <div className="text-sm font-medium">Filesystem usage</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-muted-foreground">
+                  {systemStorage?.timestamp
+                    ? `As of ${formatDate(systemStorage.timestamp)}`
+                    : ''}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchSystemStorage}
+                  disabled={loading.systemStorage}
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 mr-2 ${
+                      loading.systemStorage ? 'animate-spin' : ''
+                    }`}
+                  />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            {systemStorageError ? (
+              <div className="px-4 py-3 text-sm text-red-600">{systemStorageError}</div>
+            ) : !systemStorage ? (
+              <div className="px-4 py-6 text-sm text-muted-foreground">
+                {loading.systemStorage ? 'Loading filesystem usage…' : 'No filesystem data yet.'}
+              </div>
+            ) : systemStorage.filesystems.length === 0 ? (
+              <div className="px-4 py-6 text-sm text-muted-foreground">
+                No filesystems reported.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr className="text-left">
+                      <th className="px-4 py-2 font-medium">Mount</th>
+                      <th className="px-4 py-2 font-medium">FS</th>
+                      <th className="px-4 py-2 font-medium">Type</th>
+                      <th className="px-4 py-2 font-medium">Used</th>
+                      <th className="px-4 py-2 font-medium">Size</th>
+                      <th className="px-4 py-2 font-medium">Use</th>
+                      <th className="px-4 py-2 font-medium">RW</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {systemStorage.filesystems.map((fs) => (
+                      <tr key={`${fs.fs}-${fs.mount}`} className="border-t">
+                        <td className="px-4 py-2 font-mono text-xs">{fs.mount}</td>
+                        <td className="px-4 py-2 font-mono text-xs">{fs.fs}</td>
+                        <td className="px-4 py-2">{fs.type}</td>
+                        <td className="px-4 py-2 tabular-nums">
+                          {formatBytes(readFiniteNumber(fs.used))}
+                        </td>
+                        <td className="px-4 py-2 tabular-nums">
+                          {formatBytes(readFiniteNumber(fs.size))}
+                        </td>
+                        <td className="px-4 py-2 tabular-nums">{fs.use}</td>
+                        <td className="px-4 py-2">{fs.rw ? 'Yes' : 'No'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Project Resource Management</CardTitle>
