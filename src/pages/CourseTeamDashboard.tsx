@@ -6,6 +6,9 @@ import { useDashboardTabs } from '@/context/DashboardTabsContext';
 import { useCourseContext } from '@/components/CourseLayout';
 import DashboardMainSection from './Dashboard/DashboardMainSection';
 import DashboardSideBarSection from './Dashboard/DashboardSideBarSection';
+import {
+  canAccessAnyTeamDeployDashboard,
+} from '@/lib/courseRoleAccess';
 
 export default function CourseTeamDashboard() {
   const { teamId, courseId } = useParams<{
@@ -15,7 +18,7 @@ export default function CourseTeamDashboard() {
   const location = useLocation();
   const { user } = useAuth();
   const { addTab, openTabs } = useDashboardTabs();
-  const { effectiveRole } = useCourseContext();
+  const { effectiveRole, offering } = useCourseContext();
   const isUnmountingRef = useRef(false);
 
   const teamIdNum = useMemo(() => {
@@ -37,11 +40,23 @@ export default function CourseTeamDashboard() {
     offeringId && user ? offeringId : undefined
   );
 
-  // Check if user can manage (instructor or admin) - use effectiveRole to respect student view toggle
-  const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
+  const canAccessAnyTeamDashboard = canAccessAnyTeamDeployDashboard(
+    effectiveRole,
+  );
 
-  // Check if user is a member of this team
-  const isTeamMember = (myTeams?.some((t) => t.id === teamIdNum) ?? false) || canManage;
+  const enrollmentRoleByUserId = useMemo(() => {
+    const list = offering?.enrollments;
+    if (!list?.length) return undefined;
+    const m = new Map<number, string>();
+    for (const e of list) {
+      m.set(e.userId, e.role);
+    }
+    return m;
+  }, [offering?.enrollments]);
+
+  const isRosterMember = myTeams?.some((t) => t.id === teamIdNum) ?? false;
+  const canAccessDashboard =
+    canAccessAnyTeamDashboard || isRosterMember;
 
   useEffect(() => {
     const expectedPath = `/courses/${courseId}/dashboard/${teamIdNum}`;
@@ -51,9 +66,9 @@ export default function CourseTeamDashboard() {
       return;
     }
 
-    // Check if user can manage (instructor or admin) and is viewing a team they're not part of
+    // Instructors/admins/TAs viewing another team's dashboard: open as a tab
     if (
-      canManage &&
+      canAccessAnyTeamDashboard &&
       team &&
       teamIdNum &&
       myTeams &&
@@ -77,7 +92,7 @@ export default function CourseTeamDashboard() {
     openTabs,
     location.pathname,
     courseId,
-    canManage,
+    canAccessAnyTeamDashboard,
   ]);
 
   if (loading) {
@@ -102,8 +117,7 @@ export default function CourseTeamDashboard() {
     );
   }
 
-  // Authorization check: Students and Viewers can only access their own teams
-  if (!canManage && !isTeamMember) {
+  if (!canAccessDashboard) {
     return (
       <div className="flex flex-1 bg-gray-50 items-center justify-center">
         <div className="text-center">
@@ -118,7 +132,10 @@ export default function CourseTeamDashboard() {
   return (
     <div className="flex flex-1 bg-gray-50 min-h-0 overflow-hidden">
       <DashboardMainSection team={team} />
-      <DashboardSideBarSection team={team} />
+      <DashboardSideBarSection
+        team={team}
+        enrollmentRoleByUserId={enrollmentRoleByUserId}
+      />
     </div>
   );
 }

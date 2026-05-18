@@ -16,7 +16,7 @@ import {
 // Fetch all course offerings (backend filters by user/admin)
 export const fetchCourseOfferings = createAsyncThunk(
   'courseOfferings/fetchAll',
-  async (filters: { role?: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER' } | undefined, { dispatch }) => {
+  async (filters: { role?: 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'VIEWER' } | undefined, { dispatch }) => {
     try {
       dispatch(setLoading(true))
       dispatch(setError(null))

@@ -1,5 +1,5 @@
-// Role type
-export type Role = "ADMIN" | "INSTRUCTOR" | "STUDENT" | "VIEWER";
+// Role type (global user role; TA is also valid on enrollment / offering contexts)
+export type Role = "ADMIN" | "INSTRUCTOR" | "TA" | "STUDENT" | "VIEWER";
 
 // User entity
 export type User = {
@@ -42,7 +42,7 @@ export type CourseOffering = {
   semester?: Semester
   enrollments?: Enrollment[]
   teams?: Team[]
-  userRole?: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
+  userRole?: 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'VIEWER'
 }
 
 // Course Offering Settings
@@ -61,7 +61,7 @@ export type CourseOfferingSettings = {
 
 // Enrollment entity
 export type Enrollment = {
-  role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
+  role: 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'VIEWER'
   userId: number
   courseOfferingId: number
   user?: User
@@ -184,12 +184,12 @@ export type UpdateTeamData = {
 export type CreateEnrollmentData = {
   enrollments: Array<{
     email: string
-    role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
+    role: 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'VIEWER'
   }>
 }
 
 export type UpdateEnrollmentData = {
-  role: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER'
+  role: 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'VIEWER'
 }
 
 // Spark API Key entity (raw object from Spark server)

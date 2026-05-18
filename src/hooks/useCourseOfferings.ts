@@ -15,7 +15,7 @@ export const courseOfferingKeys = {
 	detail: (id: number) => [...courseOfferingKeys.details(), id] as const,
 }
 
-export const useCourseOfferings = (params?: { role?: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER' }) => {
+export const useCourseOfferings = (params?: { role?: 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'VIEWER' }) => {
 	return useQuery({
 		queryKey: courseOfferingKeys.list(params),
 		queryFn: async () => {

@@ -39,6 +39,10 @@ import {
   setTeamsLoading,
 } from '@/store/slices/teamsSlice';
 import { SortableTable } from '@/components/ui/sortable-table';
+import {
+  canAccessAnyTeamDeployDashboard,
+  isCourseOfferingAdmin,
+} from '@/lib/courseRoleAccess';
 
 export default function CourseProjects() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -87,7 +91,10 @@ export default function CourseProjects() {
     selectTeamsError(state, offeringId)
   );
 
-  const canManage = effectiveRole === 'INSTRUCTOR' || effectiveRole === 'ADMIN';
+  const canManageTeams = isCourseOfferingAdmin(effectiveRole);
+  const canOpenAnyTeamDashboard = canAccessAnyTeamDeployDashboard(
+    effectiveRole,
+  );
 
   useEffect(() => {
     if (!offeringId) return;
@@ -270,7 +277,7 @@ export default function CourseProjects() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Teams ({teams.length})</CardTitle>
-                {canManage && (
+                {canManageTeams && (
                   <Button
                     size="sm"
                     onClick={() => setIsNewTeamModalOpen(true)}
@@ -288,7 +295,7 @@ export default function CourseProjects() {
                   <p className="text-muted-foreground mb-4">
                     No teams have been created yet.
                   </p>
-                  {canManage && (
+                  {canManageTeams && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -315,12 +322,12 @@ export default function CourseProjects() {
                               myTeams?.some((t: Team) => t.id === team.id) ??
                               false;
 
-                            if (!canManage && !isTeamMember) {
+                            if (!canOpenAnyTeamDashboard && !isTeamMember) {
                               return;
                             }
 
                             if (
-                              canManage &&
+                              canOpenAnyTeamDashboard &&
                               myTeams &&
                               !myTeams.some((t: Team) => t.id === team.id)
                             ) {
@@ -346,7 +353,8 @@ export default function CourseProjects() {
 
                           const isTeamMember =
                             myTeams?.some((t: Team) => t.id === team.id) ?? false;
-                          const canAccess = canManage || isTeamMember;
+                          const canAccess =
+                            canOpenAnyTeamDashboard || isTeamMember;
 
                           return (
                             <div className="flex flex-col gap-0">
@@ -369,7 +377,7 @@ export default function CourseProjects() {
                                     {team.name}
                                   </span>
                                 )}
-                                {canManage && (
+                                {canManageTeams && (
                                   <>
                                     <Button
                                       variant="ghost"

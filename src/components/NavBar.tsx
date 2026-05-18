@@ -68,7 +68,7 @@ export function NavBar() {
 
     const tabs = [];
 
-    if (user.role === 'STUDENT') {
+    if (user.role === 'STUDENT' || user.role === 'TA') {
       tabs.push(
         { path: '/projects', label: 'Projects' },
         { path: '/dashboard', label: 'Dashboard' }

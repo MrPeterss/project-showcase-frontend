@@ -15,12 +15,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { Semester, Team } from '@/services/types';
+import type { Role, Semester, Team } from '@/services/types';
+import {
+  canAccessCourseSettingsRoute,
+  canAccessSparkOfferingRoute,
+} from '@/lib/courseRoleAccess';
 
 interface CourseNavBarProps {
   courseId: string;
   courseName: string;
-  courseUserRole?: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER';
+  courseUserRole?: Exclude<Role, 'ADMIN'>;
   semester?: Semester;
 }
 
@@ -101,12 +105,19 @@ function CourseNavBarComponent({
 
     const tabs = [{ path: `/courses/${courseId}`, label: 'Projects' }];
 
+    const nr =
+      normalizedRole !== undefined ? (normalizedRole as Role | string) : undefined;
+
     if (isAdmin && !viewAsStudent) {
       tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
       tabs.push({ path: `/courses/${courseId}/spark`, label: 'Spark' });
-    } else if (normalizedRole === 'INSTRUCTOR') {
-      tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
-      tabs.push({ path: `/courses/${courseId}/spark`, label: 'Spark' });
+    } else if (nr) {
+      if (canAccessCourseSettingsRoute(nr)) {
+        tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
+      }
+      if (canAccessSparkOfferingRoute(nr)) {
+        tabs.push({ path: `/courses/${courseId}/spark`, label: 'Spark' });
+      }
     }
 
     return tabs;

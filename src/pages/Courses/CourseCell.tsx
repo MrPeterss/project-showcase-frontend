@@ -19,6 +19,8 @@ export function CourseCell({ offering, isAdmin }: CourseCellProps) {
     switch (offering.userRole) {
       case 'INSTRUCTOR':
         return 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700 border-transparent';
+      case 'TA':
+        return 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 border-transparent';
       case 'STUDENT':
         return 'bg-green-600 text-white border-green-600 hover:bg-green-700 border-transparent';
       case 'VIEWER':
@@ -32,6 +34,8 @@ export function CourseCell({ offering, isAdmin }: CourseCellProps) {
     switch (offering.userRole) {
       case 'INSTRUCTOR':
         return 'Instructor';
+      case 'TA':
+        return 'TA';
       case 'STUDENT':
         return 'Student';
       case 'VIEWER':

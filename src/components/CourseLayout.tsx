@@ -12,6 +12,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCourseOffering } from '@/hooks/useCourseOfferings';
 import { DashboardTabsProvider } from '@/context/DashboardTabsContext';
 import type { CourseOffering, Role } from '@/services/types';
+import {
+  canAccessCourseSettingsRoute,
+  canAccessSparkOfferingRoute,
+} from '@/lib/courseRoleAccess';
 
 interface CourseContextType {
   offering: CourseOffering | null;
@@ -45,6 +49,7 @@ export function CourseLayout() {
   const { hasAccess: isAuthenticated } = useRoleAccess([
     'ADMIN',
     'INSTRUCTOR',
+    'TA',
     'STUDENT',
     'VIEWER',
   ]);
@@ -136,7 +141,7 @@ export function CourseLayout() {
     courseId,
   ]);
 
-  // Only redirect from settings if user doesn't have access
+  // Redirect visitors who cannot access course Settings or Spark
   // Let React Router handle all other route matching - no redirects for dashboard routes
   useEffect(() => {
     if (!courseId) return;
@@ -161,13 +166,23 @@ export function CourseLayout() {
 
     const restrictedMatch = settingsMatch || sparkMatch;
 
-    if (restrictedMatch?.params.courseId === courseId) {
-      // Wait for loading to complete and effectiveRole to be set before checking access
-      if (loading) return;
-      if (!effectiveRole) return;
+    if (!restrictedMatch?.params.courseId) return;
+    if (restrictedMatch.params.courseId !== courseId) return;
 
-      // Only redirect if user doesn't have access
-      if (effectiveRole !== 'INSTRUCTOR' && effectiveRole !== 'ADMIN') {
+    // Wait for loading to complete and effectiveRole to be set before checking access
+    if (loading || !effectiveRole) return;
+
+    // Spark remains instructor/admin only (not TA)
+    if (sparkMatch?.params.courseId === courseId) {
+      if (!canAccessSparkOfferingRoute(effectiveRole)) {
+        navigate(`/courses/${courseId}`, { replace: true });
+      }
+      return;
+    }
+
+    // Settings: instructors and site admins only (not TAs)
+    if (settingsMatch?.params.courseId === courseId) {
+      if (!canAccessCourseSettingsRoute(effectiveRole)) {
         navigate(`/courses/${courseId}`, { replace: true });
       }
     }

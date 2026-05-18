@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { canAccessSparkOfferingRoute } from '@/lib/courseRoleAccess';
 import {
   LineChart,
   Line,
@@ -1932,6 +1933,7 @@ function ExpandableKeyRow({
 
 export default function CourseSpark() {
   const { courseId } = useParams<{ courseId: string }>();
+  const navigate = useNavigate();
   const { offering, effectiveRole } = useCourseContext();
   const offeringId = Number(courseId);
 
@@ -1950,6 +1952,13 @@ export default function CourseSpark() {
   const [revokedSectionOpen, setRevokedSectionOpen] = useState(false);
 
   const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
+
+  useEffect(() => {
+    if (!courseId || !effectiveRole) return;
+    if (!canAccessSparkOfferingRoute(effectiveRole)) {
+      navigate(`/courses/${courseId}`, { replace: true });
+    }
+  }, [courseId, effectiveRole, navigate]);
 
   const activeKeys = useMemo(
     () => (keys ?? []).filter((k) => k.isActive !== false),

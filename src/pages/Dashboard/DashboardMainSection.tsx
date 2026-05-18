@@ -54,6 +54,11 @@ import { parseLogs } from '@/services/projects';
 import { useAuth } from '@/hooks/useAuth';
 import { services } from '@/services';
 import { useCourseContext } from '@/components/CourseLayout';
+import {
+  isCourseTeachingStaff,
+  formatAsTeachingRoleLeadingClause,
+  phraseDeployAsBypassRole,
+} from '@/lib/courseRoleAccess';
 
 function InfoTooltip({ content }: { content: string }) {
   return (
@@ -128,7 +133,7 @@ function EnvVarRow({
           ) : canReveal ? (
             <Eye className="h-3.5 w-3.5 text-gray-300" />
           ) : (
-            <span title="Secret — admin/instructor only">
+            <span title="Secret — visible to teaching staff (instructors, TAs, site admins)">
               <Lock className="h-3.5 w-3.5 text-gray-400" />
             </span>
           )}
@@ -160,8 +165,7 @@ export default function DashboardMainSection({
     effectiveRole = user?.role;
   }
   const isAdmin = effectiveRole === 'ADMIN';
-  const isInstructor = effectiveRole === 'INSTRUCTOR';
-  const canBypassLock = isAdmin || isInstructor;
+  const canBypassLock = isCourseTeachingStaff(effectiveRole);
   const [githubUrl, setGithubUrl] = useState('');
   const [dataFile, setDataFile] = useState<File | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -418,10 +422,10 @@ export default function DashboardMainSection({
 
     if (isServerLocked) {
       if (canBypassLock) {
-        // Admin/Instructor: Show warning but allow deployment
+        // Teaching staff roles: warning but allow deployment
         const confirmed = window.confirm(
           '⚠️ Warning: The project server is currently locked.\n\n' +
-            'As an admin/instructor, you can still deploy, but students cannot.\n\n' +
+            `${formatAsTeachingRoleLeadingClause(effectiveRole)}, you can still deploy, but students cannot.\n\n` +
             `Do you want to proceed with the ${isTagSelected ? 'redeployment' : 'deployment'}?`
         );
         if (!confirmed) return;
@@ -993,10 +997,10 @@ export default function DashboardMainSection({
 
     if (isServerLocked) {
       if (canBypassLock) {
-        // Admin/Instructor: Show warning but allow stopping
+        // Teaching staff roles: warning but allow stopping
         const confirmed = window.confirm(
           '⚠️ Warning: The project server is currently locked.\n\n' +
-            'As an admin/instructor, you can still stop projects, but students cannot.\n\n' +
+            `${formatAsTeachingRoleLeadingClause(effectiveRole)}, you can still stop projects, but students cannot.\n\n` +
             'Are you sure you want to stop this project? The container will be stopped.'
         );
         if (!confirmed) return;
@@ -1198,17 +1202,17 @@ export default function DashboardMainSection({
                   </div>
                 </div>
               )}
-              {/* Lock Warning Message for Admins/Instructors */}
+              {/* Lock Warning Message for teaching staff (role-specific copy) */}
               {courseOffering?.settings?.serverLocked && canBypassLock && (
                 <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
                   <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0" />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-amber-800">
-                      Server Locked (Admin Override Active)
+                      Server Locked (staff access)
                     </p>
                     <p className="text-xs text-amber-700">
-                      The server is locked for students, but you can still
-                      deploy as an admin/instructor.
+                      The server is locked for students, but you can still deploy as{' '}
+                      {phraseDeployAsBypassRole(effectiveRole)}.
                     </p>
                   </div>
                 </div>

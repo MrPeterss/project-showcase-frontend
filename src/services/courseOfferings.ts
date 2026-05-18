@@ -3,7 +3,7 @@ import type { CourseOffering, CreateCourseOfferingData, UpdateCourseOfferingData
 
 export const courseOfferingServices = {
   // Get all course offerings (filtered by user enrollment, or all if admin)
-  getAll: (params?: { role?: 'INSTRUCTOR' | 'STUDENT' | 'VIEWER' }): Promise<ApiResponse<CourseOffering[]>> =>
+  getAll: (params?: { role?: 'INSTRUCTOR' | 'TA' | 'STUDENT' | 'VIEWER' }): Promise<ApiResponse<CourseOffering[]>> =>
     api.get('/course-offerings', { params }),
 
   // Get course offering by ID
