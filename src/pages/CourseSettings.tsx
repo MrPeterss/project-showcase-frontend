@@ -995,6 +995,27 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
               cellClassName: 'border-r',
               accessor: (enrollment: Enrollment) =>
                 (userIdToTeamNames.get(enrollment.userId) ?? []).join(' '),
+              sortFn: (a: Enrollment, b: Enrollment, direction: 'asc' | 'desc') => {
+                const namesA = userIdToTeamNames.get(a.userId) ?? [];
+                const namesB = userIdToTeamNames.get(b.userId) ?? [];
+                const emptyA = namesA.length === 0;
+                const emptyB = namesB.length === 0;
+                if (emptyA !== emptyB) {
+                  if (emptyA)
+                    return direction === 'asc' ? 1 : -1;
+                  return direction === 'asc' ? -1 : 1;
+                }
+                let cmp = namesA
+                  .join(', ')
+                  .localeCompare(namesB.join(', '), undefined, {
+                    sensitivity: 'base',
+                  });
+                if (cmp !== 0) {
+                  return direction === 'asc' ? cmp : -cmp;
+                }
+                cmp = compareEnrollmentsByName(a, b);
+                return direction === 'asc' ? cmp : -cmp;
+              },
               render: (enrollment: Enrollment) => {
                 const names = userIdToTeamNames.get(enrollment.userId);
                 if (!names?.length) {
@@ -1753,7 +1774,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                       <div className="border rounded-md overflow-hidden">
                         <div className="max-h-96 overflow-y-auto">
                           <SortableTable
-                            columns={buildEnrollmentColumns(false, canOfferingAdmin)}
+                            columns={buildEnrollmentColumns(true, canOfferingAdmin)}
                             data={taEnrollments}
                             getRowKey={(enrollment) => enrollment.userId}
                             headerClassName="bg-gray-50 sticky top-0"
