@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import CollapsibleCard from '@/components/CollapsibleCard';
 import { Card } from '@/components/ui/card';
@@ -42,18 +42,22 @@ import {
   getStatusBadge,
 } from './shared';
 import {
-  useProjectsByTeam,
   useStreamingDeploy,
   useStreamingContainerLogs,
 } from '@/hooks';
-import { useQueryClient } from '@tanstack/react-query';
-import { projectKeys } from '@/hooks/useProjects';
-import { teamKeys } from '@/hooks/useTeams';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import {
+  refreshCachesAfterProjectChange,
+  fetchProjectsByTeam,
+} from '@/store/thunks/projectsCacheThunks';
+import {
+  setProjectDetail,
+  setTeamProjects,
+} from '@/store/slices/projectsCacheSlice';
 import type { ParsedLogLine } from '@/services/projects';
 import { parseLogs } from '@/services/projects';
-import { useAuth } from '@/hooks/useAuth';
 import { services } from '@/services';
-import { useCourseContext } from '@/components/CourseLayout';
+import { useCourseShell } from '@/hooks/useCourseShell';
 import {
   isCourseTeachingStaff,
   formatAsTeachingRoleLeadingClause,
@@ -150,20 +154,9 @@ interface DashboardMainSectionProps {
 export default function DashboardMainSection({
   team,
 }: DashboardMainSectionProps) {
-  const { user } = useAuth();
-  // Get effectiveRole from CourseContext if available (respects student view toggle)
-  // This will be undefined if not in a course context (e.g., standalone dashboard)
-  let effectiveRole: string | undefined;
-  let courseOffering: any = null;
-  try {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const courseContext = useCourseContext();
-    effectiveRole = courseContext?.effectiveRole;
-    courseOffering = courseContext?.offering;
-  } catch {
-    // Not in course context, use user role
-    effectiveRole = user?.role;
-  }
+  const dispatch = useAppDispatch();
+  const { effectiveRole, offering: courseOffering } = useCourseShell();
+
   const isAdmin = effectiveRole === 'ADMIN';
   const canBypassLock = isCourseTeachingStaff(effectiveRole);
   const [githubUrl, setGithubUrl] = useState('');
@@ -227,33 +220,21 @@ export default function DashboardMainSection({
     }
   }, [envVars, team.id, isEnvVarsLoaded]);
 
-  const queryClient = useQueryClient();
-  const { data: projectsData, isLoading: projectsLoading } = useProjectsByTeam(
-    team.id
+  const projectsData = useAppSelector(
+    (s) => s.projectsCache.listsByTeamId[team.id],
   );
+  const projectsLoading = useAppSelector(
+    (s) => s.projectsCache.loadingByTeamId[team.id] ?? false,
+  );
+
+  useEffect(() => {
+    void dispatch(fetchProjectsByTeam(team.id));
+  }, [dispatch, team.id]);
 
   // Use streaming deploy hook for build logs
   const streamingDeploy = useStreamingDeploy(team.id, {
-    onComplete: (project) => {
-      // Invalidate queries when deployment completes
-      queryClient.invalidateQueries({
-        queryKey: projectKeys.listByTeam(team.id),
-      });
-      queryClient.setQueryData(projectKeys.detail(project.id), project);
-      queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
-      queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
-      // Invalidate all project queries to ensure projects page updates
-      queryClient.invalidateQueries({ queryKey: projectKeys.all });
-      // Invalidate teams queries since teams include projects
-      if (team.courseOfferingId) {
-        queryClient.invalidateQueries({
-          queryKey: teamKeys.listByOffering(team.courseOfferingId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
-        });
-      }
-      queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+    onComplete: () => {
+      void dispatch(refreshCachesAfterProjectChange(team));
     },
   });
 
@@ -286,6 +267,25 @@ export default function DashboardMainSection({
 
   // Get the latest project (first entry is the latest deployment)
   const latestProject = projects.length > 0 ? projects[0] : null;
+
+  const applyOptimisticBuildingStatus = useCallback(() => {
+    if (!latestProject) return;
+    const building = { ...latestProject, status: 'building' as const };
+    dispatch(
+      setProjectDetail({
+        projectId: latestProject.id,
+        project: building,
+      }),
+    );
+    dispatch(
+      setTeamProjects({
+        teamId: team.id,
+        projects: projects.map((p) =>
+          p.id === latestProject.id ? building : p,
+        ),
+      }),
+    );
+  }, [dispatch, latestProject, projects, team.id]);
 
   // Parse static build logs from the latest project when not streaming
   const staticBuildLogs = useMemo(() => {
@@ -457,45 +457,13 @@ export default function DashboardMainSection({
 
       setIsRedeploying(true);
 
-      // Optimistically update project status to "building" if there's a latest project
-      if (latestProject) {
-        queryClient.setQueryData(projectKeys.detail(latestProject.id), {
-          ...latestProject,
-          status: 'building',
-        });
-        // Also update in the team projects list
-        queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
-          if (!old || !Array.isArray(old)) return old;
-          return old.map((p: any) =>
-            p.id === latestProject.id ? { ...p, status: 'building' } : p
-          );
-        });
-      }
+      applyOptimisticBuildingStatus();
 
       try {
         const response = await services.projects.redeploy(taggedProject.id);
 
         if (response.data) {
-          // Invalidate queries to refresh the project list
-          queryClient.invalidateQueries({
-            queryKey: projectKeys.listByTeam(team.id),
-          });
-          queryClient.setQueryData(
-            projectKeys.detail(response.data.id),
-            response.data
-          );
-          queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
-          queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
-          queryClient.invalidateQueries({ queryKey: projectKeys.all });
-          if (team.courseOfferingId) {
-            queryClient.invalidateQueries({
-              queryKey: teamKeys.listByOffering(team.courseOfferingId),
-            });
-            queryClient.invalidateQueries({
-              queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
-            });
-          }
-          queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+          void dispatch(refreshCachesAfterProjectChange(team));
 
           setDeploymentSuccess(`Tagged project "${githubUrl.trim()}" redeployed successfully!`);
           setTimeout(() => setDeploymentSuccess(null), 5000);
@@ -517,7 +485,7 @@ export default function DashboardMainSection({
     // Regular deployment flow for GitHub URLs
     // Basic GitHub URL validation
     const githubUrlPattern =
-      /^https:\/\/github\.com\/[\w\-\.]+\/[\w\-\.]+(\/)?$/;
+      /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
     if (!githubUrlPattern.test(githubUrl.trim())) {
       alert(
         'Please enter a valid GitHub URL (e.g., https://github.com/username/repository)'
@@ -529,22 +497,9 @@ export default function DashboardMainSection({
     setIsBuildLogsOpen(true);
 
     // Optimistically update project status to "building" if there's a latest project
-    if (latestProject) {
-      queryClient.setQueryData(projectKeys.detail(latestProject.id), {
-        ...latestProject,
-        status: 'building',
-      });
-      // Also update in the team projects list
-      queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
-        if (!old || !Array.isArray(old)) return old;
-        return old.map((p: any) =>
-          p.id === latestProject.id ? { ...p, status: 'building' } : p
-        );
-      });
-    }
+    applyOptimisticBuildingStatus();
 
     try {
-      // Convert envVars array to object, filtering out empty keys
       const envVarsObject = envVars
         .filter(env => env.key.trim() !== '')
         .reduce((acc, env) => {
@@ -612,57 +567,7 @@ export default function DashboardMainSection({
     setOldBuildError(null);
     setIsBuildingOldJson(true);
 
-    // Optimistically update project status to "building" if there's a latest project
-    if (latestProject) {
-      queryClient.setQueryData(projectKeys.detail(latestProject.id), {
-        ...latestProject,
-        status: 'building',
-      });
-      // Also update in the team projects list
-      queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
-        if (!old || !Array.isArray(old)) return old;
-        return old.map((p: any) =>
-          p.id === latestProject.id ? { ...p, status: 'building' } : p
-        );
-      });
-      // Also update in teams lists (for CourseProjects page)
-      if (team.courseOfferingId) {
-        queryClient.setQueryData(
-          teamKeys.listByOffering(team.courseOfferingId),
-          (old: any) => {
-            if (!old || !Array.isArray(old)) return old;
-            return old.map((t: any) => {
-              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
-                return {
-                  ...t,
-                  projects: t.projects.map((p: any) =>
-                    p.id === latestProject.id ? { ...p, status: 'building' } : p
-                  ),
-                };
-              }
-              return t;
-            });
-          }
-        );
-        queryClient.setQueryData(
-          teamKeys.listMyByOffering(team.courseOfferingId),
-          (old: any) => {
-            if (!old || !Array.isArray(old)) return old;
-            return old.map((t: any) => {
-              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
-                return {
-                  ...t,
-                  projects: t.projects.map((p: any) =>
-                    p.id === latestProject.id ? { ...p, status: 'building' } : p
-                  ),
-                };
-              }
-              return t;
-            });
-          }
-        );
-      }
-    }
+    applyOptimisticBuildingStatus();
 
     try {
       const response = await services.projects.buildOldJson({
@@ -671,28 +576,7 @@ export default function DashboardMainSection({
       });
 
       if (response.data) {
-        // Invalidate queries to refresh the project list
-        queryClient.invalidateQueries({
-          queryKey: projectKeys.listByTeam(team.id),
-        });
-        queryClient.setQueryData(
-          projectKeys.detail(response.data.id),
-          response.data
-        );
-        queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
-        queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
-        // Invalidate all project queries to ensure projects page updates
-        queryClient.invalidateQueries({ queryKey: projectKeys.all });
-        // Invalidate teams queries since teams include projects
-        if (team.courseOfferingId) {
-          queryClient.invalidateQueries({
-            queryKey: teamKeys.listByOffering(team.courseOfferingId),
-          });
-          queryClient.invalidateQueries({
-            queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
-          });
-        }
-        queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+        void dispatch(refreshCachesAfterProjectChange(team));
 
         setDeploymentSuccess('Old JSON project built successfully!');
         setTimeout(() => setDeploymentSuccess(null), 5000);
@@ -735,11 +619,11 @@ export default function DashboardMainSection({
     const projectName = githubUrl.trim();
 
     // Validate GitHub URL if provided (it's optional, but if provided should be valid)
-    let finalGithubUrl: string | undefined =
+    const finalGithubUrl: string | undefined =
       migrationGithubUrl.trim() || undefined;
     if (finalGithubUrl) {
       const githubUrlPattern =
-        /^https:\/\/github\.com\/[\w\-\.]+\/[\w\-\.]+(\/)?$/;
+        /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
       if (!githubUrlPattern.test(finalGithubUrl)) {
         setMigrationError(
           'Invalid GitHub URL format. Please use: https://github.com/username/repository'
@@ -769,57 +653,7 @@ export default function DashboardMainSection({
     setMigrationError(null);
     setIsMigrating(true);
 
-    // Optimistically update project status to "building" if there's a latest project
-    if (latestProject) {
-      queryClient.setQueryData(projectKeys.detail(latestProject.id), {
-        ...latestProject,
-        status: 'building',
-      });
-      // Also update in the team projects list
-      queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
-        if (!old || !Array.isArray(old)) return old;
-        return old.map((p: any) =>
-          p.id === latestProject.id ? { ...p, status: 'building' } : p
-        );
-      });
-      // Also update in teams lists (for CourseProjects page)
-      if (team.courseOfferingId) {
-        queryClient.setQueryData(
-          teamKeys.listByOffering(team.courseOfferingId),
-          (old: any) => {
-            if (!old || !Array.isArray(old)) return old;
-            return old.map((t: any) => {
-              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
-                return {
-                  ...t,
-                  projects: t.projects.map((p: any) =>
-                    p.id === latestProject.id ? { ...p, status: 'building' } : p
-                  ),
-                };
-              }
-              return t;
-            });
-          }
-        );
-        queryClient.setQueryData(
-          teamKeys.listMyByOffering(team.courseOfferingId),
-          (old: any) => {
-            if (!old || !Array.isArray(old)) return old;
-            return old.map((t: any) => {
-              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
-                return {
-                  ...t,
-                  projects: t.projects.map((p: any) =>
-                    p.id === latestProject.id ? { ...p, status: 'building' } : p
-                  ),
-                };
-              }
-              return t;
-            });
-          }
-        );
-      }
-    }
+    applyOptimisticBuildingStatus();
 
     try {
       const response = await services.admin.migrateProject({
@@ -829,30 +663,7 @@ export default function DashboardMainSection({
       });
 
       if (response.data) {
-        // Invalidate queries to refresh the project list
-        queryClient.invalidateQueries({
-          queryKey: projectKeys.listByTeam(team.id),
-        });
-        if (response.data.project) {
-          queryClient.setQueryData(
-            projectKeys.detail(response.data.project.id),
-            response.data.project
-          );
-        }
-        queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
-        queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
-        // Invalidate all project queries to ensure projects page updates
-        queryClient.invalidateQueries({ queryKey: projectKeys.all });
-        // Invalidate teams queries since teams include projects
-        if (team.courseOfferingId) {
-          queryClient.invalidateQueries({
-            queryKey: teamKeys.listByOffering(team.courseOfferingId),
-          });
-          queryClient.invalidateQueries({
-            queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
-          });
-        }
-        queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+        void dispatch(refreshCachesAfterProjectChange(team));
 
         setDeploymentSuccess(
           response.data.message || 'Project migrated successfully!'
@@ -890,57 +701,7 @@ export default function DashboardMainSection({
     setOldBuildError(null);
     setIsBuildingOldSql(true);
 
-    // Optimistically update project status to "building" if there's a latest project
-    if (latestProject) {
-      queryClient.setQueryData(projectKeys.detail(latestProject.id), {
-        ...latestProject,
-        status: 'building',
-      });
-      // Also update in the team projects list
-      queryClient.setQueryData(projectKeys.listByTeam(team.id), (old: any) => {
-        if (!old || !Array.isArray(old)) return old;
-        return old.map((p: any) =>
-          p.id === latestProject.id ? { ...p, status: 'building' } : p
-        );
-      });
-      // Also update in teams lists (for CourseProjects page)
-      if (team.courseOfferingId) {
-        queryClient.setQueryData(
-          teamKeys.listByOffering(team.courseOfferingId),
-          (old: any) => {
-            if (!old || !Array.isArray(old)) return old;
-            return old.map((t: any) => {
-              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
-                return {
-                  ...t,
-                  projects: t.projects.map((p: any) =>
-                    p.id === latestProject.id ? { ...p, status: 'building' } : p
-                  ),
-                };
-              }
-              return t;
-            });
-          }
-        );
-        queryClient.setQueryData(
-          teamKeys.listMyByOffering(team.courseOfferingId),
-          (old: any) => {
-            if (!old || !Array.isArray(old)) return old;
-            return old.map((t: any) => {
-              if (t.id === team.id && t.projects && Array.isArray(t.projects)) {
-                return {
-                  ...t,
-                  projects: t.projects.map((p: any) =>
-                    p.id === latestProject.id ? { ...p, status: 'building' } : p
-                  ),
-                };
-              }
-              return t;
-            });
-          }
-        );
-      }
-    }
+    applyOptimisticBuildingStatus();
 
     try {
       const response = await services.projects.buildOldSql({
@@ -949,28 +710,7 @@ export default function DashboardMainSection({
       });
 
       if (response.data) {
-        // Invalidate queries to refresh the project list
-        queryClient.invalidateQueries({
-          queryKey: projectKeys.listByTeam(team.id),
-        });
-        queryClient.setQueryData(
-          projectKeys.detail(response.data.id),
-          response.data
-        );
-        queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
-        queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
-        // Invalidate all project queries to ensure projects page updates
-        queryClient.invalidateQueries({ queryKey: projectKeys.all });
-        // Invalidate teams queries since teams include projects
-        if (team.courseOfferingId) {
-          queryClient.invalidateQueries({
-            queryKey: teamKeys.listByOffering(team.courseOfferingId),
-          });
-          queryClient.invalidateQueries({
-            queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
-          });
-        }
-        queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+        void dispatch(refreshCachesAfterProjectChange(team));
 
         setDeploymentSuccess('Old SQL project built successfully!');
         setTimeout(() => setDeploymentSuccess(null), 5000);
@@ -1024,25 +764,7 @@ export default function DashboardMainSection({
     try {
       await services.projects.stop(latestProject.id);
 
-      // Invalidate queries to refresh the project list
-      queryClient.invalidateQueries({
-        queryKey: projectKeys.listByTeam(team.id),
-      });
-      queryClient.invalidateQueries({ queryKey: projectKeys.containers() });
-      queryClient.invalidateQueries({ queryKey: projectKeys.lists() });
-      queryClient.invalidateQueries({
-        queryKey: projectKeys.detail(latestProject.id),
-      });
-      // Invalidate teams queries since teams include projects
-      if (team.courseOfferingId) {
-        queryClient.invalidateQueries({
-          queryKey: teamKeys.listByOffering(team.courseOfferingId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: teamKeys.listMyByOffering(team.courseOfferingId),
-        });
-      }
-      queryClient.invalidateQueries({ queryKey: teamKeys.lists() });
+      void dispatch(refreshCachesAfterProjectChange(team));
 
       setDeploymentSuccess('Project stopped successfully!');
       setTimeout(() => setDeploymentSuccess(null), 5000);

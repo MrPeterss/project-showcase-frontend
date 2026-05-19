@@ -5,6 +5,13 @@ import courseOfferingsReducer from './slices/courseOfferingsSlice'
 import semestersReducer from './slices/semestersSlice'
 import teamsReducer from './slices/teamsSlice'
 import deploymentLogsReducer from './slices/deploymentLogsSlice'
+import activeOfferingReducer from './slices/activeOfferingSlice'
+import courseUiReducer from './slices/courseUiSlice'
+import dashboardTabsReducer from './slices/dashboardTabsSlice'
+import coursesUiReducer from './slices/coursesUiSlice'
+import enrollmentsReducer from './slices/enrollmentsSlice'
+import projectsCacheReducer from './slices/projectsCacheSlice'
+import sparkReducer from './slices/sparkSlice'
 
 export const store = configureStore({
   reducer: {
@@ -14,6 +21,13 @@ export const store = configureStore({
     semesters: semestersReducer,
     teams: teamsReducer,
     deploymentLogs: deploymentLogsReducer,
+    activeOffering: activeOfferingReducer,
+    courseUi: courseUiReducer,
+    dashboardTabs: dashboardTabsReducer,
+    coursesUi: coursesUiReducer,
+    enrollments: enrollmentsReducer,
+    projectsCache: projectsCacheReducer,
+    spark: sparkReducer,
   }
 })
 

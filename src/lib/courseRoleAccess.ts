@@ -48,7 +48,7 @@ export function canAccessCourseSettingsRoute(
 export function canAccessSparkOfferingRoute(
   effectiveRole: Role | string | undefined,
 ): boolean {
-  return effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
+  return isCourseOfferingAdmin(effectiveRole);
 }
 
 /**

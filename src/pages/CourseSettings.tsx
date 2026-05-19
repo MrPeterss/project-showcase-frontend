@@ -10,7 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
-import { useCourseContext } from '@/components/CourseLayout';
+import { useCourseShell } from '@/hooks/useCourseShell';
 import {
   ArrowLeft,
   Upload,
@@ -33,19 +33,27 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { services } from '@/services';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
-  useUpdateCourseOffering,
-  useDeleteCourseOffering,
-} from '@/hooks/useCourseOfferings';
+  selectAllCourseOfferings,
+  selectIsDeletingCourseOffering,
+} from '@/store/selectors/courseOfferingsSelectors';
 import {
-  useEnrollmentsByOffering,
-  useCreateEnrollments,
-  useDeleteEnrollment,
-} from '@/hooks/useEnrollments';
-import { useCourseOfferings } from '@/hooks/useCourseOfferings';
+  deleteCourseOffering as deleteCourseOfferingThunk,
+  fetchCourseOfferings,
+  updateCourseOfferingById,
+} from '@/store/thunks/courseOfferingsThunks';
+import {
+  createEnrollmentsForOffering,
+  deleteEnrollmentForOffering,
+  fetchEnrollmentsByOffering,
+} from '@/store/thunks/enrollmentsThunks';
+import {
+  createTeamForOffering,
+  fetchTeamsByOffering,
+  updateTeamByIdThunk,
+} from '@/store/thunks/teamsThunks';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
-import { useQueryClient } from '@tanstack/react-query';
-import { teamKeys, useTeamsByOffering, useUpdateTeam } from '@/hooks/useTeams';
 import { SortableTable } from '@/components/ui/sortable-table';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { cn } from '@/lib/utils';
@@ -54,30 +62,11 @@ import {
   canAccessCourseSettingsRoute,
   isCourseOfferingAdmin,
 } from '@/lib/courseRoleAccess';
-
-function memberEmailsFromTeam(team: Team): string[] {
-  const emails: string[] = [];
-  const seen = new Set<string>();
-  for (const m of team.members ?? []) {
-    const raw = m.user?.email?.trim();
-    if (!raw) continue;
-    const k = raw.toLowerCase();
-    if (seen.has(k)) continue;
-    seen.add(k);
-    emails.push(raw);
-  }
-  return emails;
-}
-
-function teamIdsContainingUser(teamsList: Team[], userId: number): Set<number> {
-  const s = new Set<number>();
-  for (const team of teamsList) {
-    if (team.members?.some((m) => m.userId === userId)) {
-      s.add(team.id);
-    }
-  }
-  return s;
-}
+import {
+  compareEnrollmentsByName,
+  memberEmailsFromTeam,
+  teamIdsContainingUser,
+} from '@/pages/CourseSettings/enrollmentUtils';
 
 type SingleEnrollmentAddKind =
   | 'student'
@@ -98,21 +87,12 @@ type AddEnrollmentBatchOptions = {
   }) => void;
 };
 
-/** Sort roster by display name then email */
-function compareEnrollmentsByName(a: Enrollment, b: Enrollment) {
-  const na =
-    ((a.user as { name?: string })?.name || a.user?.email || '').toLowerCase();
-  const nb =
-    ((b.user as { name?: string })?.name || b.user?.email || '').toLowerCase();
-  const c = na.localeCompare(nb);
-  if (c !== 0) return c;
-  return a.userId - b.userId;
-}
-
 export default function CourseSettings() {
-  const { courseId } = useParams<{ courseId: string }>();
+  const { offeringId: offeringIdParam } = useParams<{
+    offeringId: string;
+  }>();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const dispatch = useAppDispatch();
 
   // IMPORTANT: Call all hooks at the top, before any conditional logic
   const {
@@ -120,25 +100,47 @@ export default function CourseSettings() {
     loading: offeringLoading,
     refetch: refetchOffering,
     effectiveRole,
-  } = useCourseContext();
+    offeringId: offeringIdNum,
+  } = useCourseShell();
   const { user } = useAuth();
 
-  // React Query hooks
-  const updateCourseOffering = useUpdateCourseOffering();
-  const createEnrollments = useCreateEnrollments();
-  const deleteEnrollment = useDeleteEnrollment();
-  const deleteCourseOffering = useDeleteCourseOffering();
-  const { data: allOfferings } = useCourseOfferings();
+  const allOfferings = useAppSelector(selectAllCourseOfferings);
+  const courseOfferingsUpdating = useAppSelector((s) => s.courseOfferings.updating);
+  const courseOfferingsDeleting = useAppSelector(selectIsDeletingCourseOffering);
+  const enrollmentsLoading = useAppSelector((s) =>
+    offeringIdNum !== null
+      ? !!s.enrollments.loadingByOffering[offeringIdNum]
+      : false,
+  );
 
-  // Get enrollments using React Query
-  const offeringId = courseId ? parseInt(courseId, 10) : undefined;
-  const { data: enrollmentsData, refetch: refetchEnrollments } =
-    useEnrollmentsByOffering(offeringId);
-  const enrollments = enrollmentsData || [];
+  const enrollments = useAppSelector((s) =>
+    offeringIdNum !== null
+      ? (s.enrollments.byOfferingId[offeringIdNum] ?? [])
+      : [],
+  );
 
-  const { data: teamsData, refetch: refetchTeams } =
-    useTeamsByOffering(offeringId);
-  const updateTeamMutation = useUpdateTeam();
+  const teamsData = useAppSelector((s) =>
+    offeringIdNum !== null ? (s.teams.byOffering[offeringIdNum] ?? []) : [],
+  );
+
+  const refetchEnrollments = async () => {
+    if (offeringIdNum !== null) {
+      await dispatch(fetchEnrollmentsByOffering(offeringIdNum));
+    }
+  };
+
+  const refetchTeams = async () => {
+    if (offeringIdNum !== null) {
+      await dispatch(fetchTeamsByOffering(offeringIdNum));
+    }
+  };
+
+  useEffect(() => {
+    if (offeringIdNum === null) return;
+    void dispatch(fetchEnrollmentsByOffering(offeringIdNum));
+    void dispatch(fetchTeamsByOffering(offeringIdNum));
+    void dispatch(fetchCourseOfferings());
+  }, [dispatch, offeringIdNum]);
 
   const userIdToTeamNames = useMemo(() => {
     const map = new Map<number, string[]>();
@@ -201,17 +203,15 @@ export default function CourseSettings() {
 
   const canOfferingAdmin = isCourseOfferingAdmin(effectiveRole);
 
-  // Compute available offerings from React Query data
-  const availableOfferings = allOfferings
-    ? allOfferings.filter((off) => {
-        // Exclude current offering
-        if (off.id === offeringId) return false;
-        // Include if user is admin globally
-        if (user?.role === 'ADMIN') return true;
-        // Include if user is instructor in this offering
-        return off.userRole === 'INSTRUCTOR';
-      })
-    : [];
+  // Compute available offerings (Redux courseOfferings list)
+  const availableOfferings = allOfferings.filter((off) => {
+    // Exclude current offering
+    if (offeringIdNum !== null && off.id === offeringIdNum) return false;
+    // Include if user is admin globally
+    if (user?.role === 'ADMIN') return true;
+    // Include if user is instructor in this offering
+    return off.userRole === 'INSTRUCTOR';
+  });
 
   // Set selected viewable offerings from settings when offering loads
   useEffect(() => {
@@ -258,12 +258,12 @@ export default function CourseSettings() {
   // Check course-specific role access after fetching offering
   useEffect(() => {
     if (effectiveRole && !canAccessCourseSettingsRoute(effectiveRole)) {
-      navigate(`/courses/${courseId}`, { replace: true });
+      navigate(`/courses/${offeringIdParam}`, { replace: true });
     }
-  }, [effectiveRole, courseId, navigate]);
+  }, [effectiveRole, offeringIdParam, navigate]);
 
   const handleDeleteCourseOffering = async () => {
-    if (!offering || !offeringId) return;
+    if (!offering || offeringIdNum === null) return;
 
     const confirmed = window.confirm(
       'Are you sure you want to delete this course offering? This action cannot be undone.'
@@ -272,7 +272,7 @@ export default function CourseSettings() {
     if (!confirmed) return;
 
     try {
-      await deleteCourseOffering.mutateAsync(offering.id);
+      await dispatch(deleteCourseOfferingThunk(offering.id)).unwrap();
       navigate('/courses', { replace: true });
     } catch (error) {
       console.error('Error deleting course offering:', error);
@@ -400,7 +400,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
     }>,
     opts?: AddEnrollmentBatchOptions,
   ) => {
-    if (!offering || !offeringId) return;
+    if (!offering || offeringIdNum === null) return;
 
     const preserveBulk = opts?.preserveBulkEnrollmentForm ?? false;
     const quiet = opts?.quiet ?? false;
@@ -461,26 +461,36 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
       let enrollmentErrorMessage = '';
 
       try {
-        await createEnrollments.mutateAsync({
-          offeringId: offering.id,
-          data: enrollmentData,
-        });
-      } catch (error: any) {
-        // Handle 409 Conflict (user already enrolled) - this is okay, continue with team creation
-        if (error?.response?.status === 409) {
-          // Treat as success, users are already enrolled - continue with team creation
+        await dispatch(
+          createEnrollmentsForOffering({
+            offeringId: offering.id,
+            data: enrollmentData,
+          }),
+        ).unwrap();
+      } catch (error: unknown) {
+        const status = (error as { response?: { status?: number } })?.response
+          ?.status;
+        // Handle 409 Conflict (user already enrolled) — continue with team creation
+        if (status === 409) {
+          const errObj = error as {
+            response?: { data?: { message?: string } };
+            message?: string;
+          };
           const conflictMessage =
-            error?.response?.data?.message ||
+            errObj?.response?.data?.message ||
             'Some users were already enrolled';
           enrollmentErrorMessage = conflictMessage;
         } else {
-          // For other errors, show error and stop
+          const errObj = error as {
+            response?: { data?: { message?: string } };
+            message?: string;
+          };
           const errorMessage =
-            error?.response?.data?.message ||
-            error?.message ||
+            errObj?.response?.data?.message ||
+            errObj?.message ||
             'Failed to create enrollments. Please try again.';
           rejectCreate(errorMessage, error);
-          return; // Don't proceed with team creation if enrollment failed
+          return;
         }
       }
 
@@ -495,11 +505,16 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
             return enrollment?.email || emailLower;
           });
 
-          await services.teams.create(offering.id, {
-            name: teamName,
-            memberEmails,
-            courseOfferingId: offering.id,
-          });
+          await dispatch(
+            createTeamForOffering({
+              offeringId: offering.id,
+              data: {
+                name: teamName,
+                memberEmails,
+                courseOfferingId: offering.id,
+              },
+            }),
+          ).unwrap();
         } catch (error: any) {
           console.error(`Error creating team ${teamName}:`, error);
           const errorMessage =
@@ -673,13 +688,15 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
   };
 
   const handleRemoveEnrollment = async (userId: number) => {
-    if (!offering || !offeringId) return;
+    if (!offering || offeringIdNum === null) return;
 
     try {
-      await deleteEnrollment.mutateAsync({
-        offeringId: offering.id,
-        userId,
-      });
+      await dispatch(
+        deleteEnrollmentForOffering({
+          offeringId: offering.id,
+          userId,
+        }),
+      ).unwrap();
       await refetchTeams();
     } catch (error) {
       console.error('Error removing enrollment:', error);
@@ -727,19 +744,21 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
   };
 
   const handleSaveVisibilitySettings = async () => {
-    if (!offering || !offeringId) return;
+    if (!offering || offeringIdNum === null) return;
 
     try {
       // Update settings with course_visibility as a JSON object
-      await updateCourseOffering.mutateAsync({
-        id: offering.id,
-        data: {
-          settings: {
-            ...offering.settings,
-            course_visibility: selectedViewableOfferings,
+      await dispatch(
+        updateCourseOfferingById({
+          id: offering.id,
+          data: {
+            settings: {
+              ...offering.settings,
+              course_visibility: selectedViewableOfferings,
+            },
           },
-        },
-      });
+        }),
+      ).unwrap();
 
       // Refresh offering to get updated settings
       await refetchOffering();
@@ -750,7 +769,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
   };
 
   const handleTagProjects = async () => {
-    if (!offering || !offeringId || !tagInput.trim()) return;
+    if (!offering || offeringIdNum === null || !tagInput.trim()) return;
 
     const trimmedTag = tagInput.trim();
 
@@ -774,25 +793,26 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
     setIsTagging(true);
     try {
       // Tag the projects
-      await services.projects.tagProjects(offeringId, trimmedTag);
+      await services.projects.tagProjects(offeringIdNum, trimmedTag);
 
       // Update settings with the new tag
       const updatedTags = [...existingTags, trimmedTag];
-      await updateCourseOffering.mutateAsync({
-        id: offering.id,
-        data: {
-          settings: {
-            ...offering.settings,
-            project_tags: updatedTags,
+      await dispatch(
+        updateCourseOfferingById({
+          id: offering.id,
+          data: {
+            settings: {
+              ...offering.settings,
+              project_tags: updatedTags,
+            },
           },
-        },
-      });
+        }),
+      ).unwrap();
 
       // Refresh offering to get updated settings
       await refetchOffering();
 
-      // Force refetch all team queries to update tags on dashboard pages immediately
-      await queryClient.refetchQueries({ queryKey: teamKeys.all });
+      await refetchTeams();
 
       setTagInput('');
       alert('Projects tagged successfully!');
@@ -805,7 +825,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
   };
 
   const handleRemoveTag = async (tag: string) => {
-    if (!offering || !offeringId) return;
+    if (!offering || offeringIdNum === null) return;
 
     const confirmed = window.confirm(
       `Are you sure you want to remove the tag "${tag}"? This will untag all projects with this tag. Projects will be marked for pruning if they are also non-running.`
@@ -815,7 +835,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
 
     setRemovingTag(tag);
     try {
-      const response = await services.projects.removeTag(offeringId, tag);
+      const response = await services.projects.removeTag(offeringIdNum, tag);
       const result = response.data.result;
 
       // Show success message with details
@@ -832,21 +852,22 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
       const existingTags: string[] = offering.settings?.project_tags || [];
       const updatedTags = existingTags.filter((t) => t !== tag);
 
-      await updateCourseOffering.mutateAsync({
-        id: offering.id,
-        data: {
-          settings: {
-            ...offering.settings,
-            project_tags: updatedTags,
+      await dispatch(
+        updateCourseOfferingById({
+          id: offering.id,
+          data: {
+            settings: {
+              ...offering.settings,
+              project_tags: updatedTags,
+            },
           },
-        },
-      });
+        }),
+      ).unwrap();
 
       // Refresh offering to get updated settings
       await refetchOffering();
 
-      // Force refetch all team queries to update tags on dashboard pages immediately
-      await queryClient.refetchQueries({ queryKey: teamKeys.all });
+      await refetchTeams();
     } catch (error) {
       console.error('Error removing tag:', error);
       alert('Failed to remove tag. Please try again.');
@@ -856,7 +877,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
   };
 
   const handleToggleLock = async () => {
-    if (!offering || !offeringId || isTogglingLock) return;
+    if (!offering || offeringIdNum === null || isTogglingLock) return;
 
     // Clear previous messages
     setLockError(null);
@@ -913,7 +934,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
   };
 
   const handleSaveStudentTeams = async () => {
-    if (!teamAssignEnrollment) return;
+    if (!teamAssignEnrollment || offeringIdNum === null) return;
 
     const canonicalEmail = teamAssignEnrollment.user?.email?.trim();
     if (!canonicalEmail) {
@@ -956,16 +977,19 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
     setIsSavingStudentTeams(true);
     try {
       for (const { team, memberEmails } of updates) {
-        await updateTeamMutation.mutateAsync({
-          teamId: team.id,
-          data: {
-            name: team.name,
-            memberEmails,
-            ...(typeof team.hallOfFame === 'boolean'
-              ? { hallOfFame: team.hallOfFame }
-              : {}),
-          },
-        });
+        await dispatch(
+          updateTeamByIdThunk({
+            teamId: team.id,
+            offeringId: offeringIdNum,
+            data: {
+              name: team.name,
+              memberEmails,
+              ...(typeof team.hallOfFame === 'boolean'
+                ? { hallOfFame: team.hallOfFame }
+                : {}),
+            },
+          }),
+        ).unwrap();
       }
       await refetchTeams();
       setTeamAssignEnrollment(null);
@@ -1140,7 +1164,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                   variant="ghost"
                   size="sm"
                   onClick={() => handleRemoveEnrollment(enrollment.userId)}
-                  disabled={deleteEnrollment.isPending}
+                  disabled={enrollmentsLoading}
                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -1304,7 +1328,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
               size="sm"
               onClick={() => setTeamAssignEnrollment(enrollment)}
               disabled={
-                deleteEnrollment.isPending ||
+                enrollmentsLoading ||
                 isSavingStudentTeams ||
                 !enrollment.user?.email?.trim() ||
                 !canOfferingAdmin
@@ -1324,7 +1348,7 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                 variant="ghost"
                 size="sm"
                 onClick={() => handleRemoveEnrollment(enrollment.userId)}
-                disabled={deleteEnrollment.isPending}
+                disabled={enrollmentsLoading}
                 className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
               >
                 <Trash2 className="h-4 w-4" />
@@ -1483,141 +1507,6 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                     </div>
                   )}
 
-                  {canOfferingAdmin && (
-                    <>
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1 h-px bg-gray-200"></div>
-                    <span className="text-sm text-gray-500 font-medium">
-                      Add Members
-                    </span>
-                    <div className="flex-1 h-px bg-gray-200"></div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground">
-                      Add members to this course by uploading a CSV file or
-                      entering information manually.
-                    </p>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        Upload CSV File
-                      </label>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <input
-                          type="file"
-                          accept=".csv"
-                          onChange={handleFileUpload}
-                          className="hidden"
-                          id="csv-upload"
-                        />
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setEnrollmentError(null);
-                            document.getElementById('csv-upload')?.click();
-                          }}
-                          className="flex items-center gap-2"
-                        >
-                          <Upload className="h-4 w-4" />
-                          Choose CSV File
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={handleDownloadTemplate}
-                          className="flex items-center gap-2"
-                        >
-                          <Download className="h-4 w-4" />
-                          Download Template
-                        </Button>
-                        <span className="text-xs text-muted-foreground">
-                          Format: email, role, name, team_name (all optional
-                          except email)
-                        </span>
-                      </div>
-                      {enrollmentError && !showAddEnrollments && (
-                        <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                          {enrollmentError}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1 h-px bg-gray-200"></div>
-                      <span className="text-sm text-gray-500 font-medium">
-                        OR
-                      </span>
-                      <div className="flex-1 h-px bg-gray-200"></div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">
-                        Enter Manually
-                      </label>
-                      <Button
-                        variant="outline"
-                        onClick={() =>
-                          setShowAddEnrollments(!showAddEnrollments)
-                        }
-                        className="flex items-center gap-2"
-                      >
-                        <Users className="h-4 w-4" />
-                        {showAddEnrollments
-                          ? 'Hide Manual Entry'
-                          : 'Add Members Manually'}
-                      </Button>
-
-                      {showAddEnrollments && (
-                        <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
-                          <div>
-                            <label className="text-sm font-medium block mb-2">
-                              User Information (one per line)
-                            </label>
-                            <textarea
-                              value={enrollmentInput}
-                              onChange={(e) => {
-                                setEnrollmentInput(e.target.value);
-                                setEnrollmentError(null);
-                              }}
-                              placeholder="pjb294@cornell.edu,,,&#10;pjb294@cornell.edu, INSTRUCTOR,,&#10;pjb294@cornell.edu, TA,,&#10;pjb294@cornell.edu,,Peter Bidoshi,&#10;pjb294@cornell.edu,,,Team 3&#10;student1@cornell.edu, STUDENT, John Doe, Team A"
-                              className="w-full h-32 p-3 border rounded-md text-sm"
-                            />
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Format: email, role, name, team_name (all
-                              optional except email). Leave fields blank between
-                              commas to skip them. Default role is STUDENT.
-                              Staff roles include <span className="font-medium text-foreground">INSTRUCTOR</span>,{' '}
-                              <span className="font-medium text-foreground">TA</span>, and{' '}
-                              <span className="font-medium text-foreground">VIEWER</span>.
-                            </p>
-                            {enrollmentError && (
-                              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
-                                {enrollmentError}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <Button onClick={handleAddEnrollments} size="sm">
-                              Add Members
-                            </Button>
-                            <Button
-                              variant="outline"
-                              onClick={() => {
-                                setShowAddEnrollments(false);
-                                setEnrollmentError(null);
-                              }}
-                              size="sm"
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                    </>
-                  )}
-
                   <div className="flex items-center gap-4 pt-4">
                     <div className="flex-1 h-px bg-gray-200"></div>
                     <span className="text-sm text-gray-500 font-medium">
@@ -1752,9 +1641,9 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                   </CardHeader>
                   <CardContent>
                     <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
-                      Use the CSV or manual roster flow on{' '}
+                      Use the CSV or manual roster on{' '}
                       <span className="font-medium text-foreground">
-                        Students
+                        Manage
                       </span>{' '}
                       with role{' '}
                       <code className="rounded bg-muted px-1 py-0.5 text-xs">
@@ -1792,6 +1681,144 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
               <>
                 {canOfferingAdmin && (
                   <>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Add Members
+                    </CardTitle>
+                    <CardDescription>
+                      Bulk-enroll students, instructors, and TAs via CSV or manual
+                      entry. Use the Students and Staff tabs to add one person at a
+                      time.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                  <div className="space-y-4">
+                    <p className="text-sm text-muted-foreground">
+                      Add members to this course by uploading a CSV file or
+                      entering information manually.
+                    </p>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Upload CSV File
+                      </label>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <input
+                          type="file"
+                          accept=".csv"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                          id="csv-upload"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setEnrollmentError(null);
+                            document.getElementById('csv-upload')?.click();
+                          }}
+                          className="flex items-center gap-2"
+                        >
+                          <Upload className="h-4 w-4" />
+                          Choose CSV File
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={handleDownloadTemplate}
+                          className="flex items-center gap-2"
+                        >
+                          <Download className="h-4 w-4" />
+                          Download Template
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          Format: email, role, name, team_name (all optional
+                          except email)
+                        </span>
+                      </div>
+                      {enrollmentError && !showAddEnrollments && (
+                        <div className="p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                          {enrollmentError}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1 h-px bg-gray-200"></div>
+                      <span className="text-sm text-gray-500 font-medium">
+                        OR
+                      </span>
+                      <div className="flex-1 h-px bg-gray-200"></div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Enter Manually
+                      </label>
+                      <Button
+                        variant="outline"
+                        onClick={() =>
+                          setShowAddEnrollments(!showAddEnrollments)
+                        }
+                        className="flex items-center gap-2"
+                      >
+                        <Users className="h-4 w-4" />
+                        {showAddEnrollments
+                          ? 'Hide Manual Entry'
+                          : 'Add Members Manually'}
+                      </Button>
+
+                      {showAddEnrollments && (
+                        <div className="space-y-3 p-4 border rounded-lg bg-gray-50">
+                          <div>
+                            <label className="text-sm font-medium block mb-2">
+                              User Information (one per line)
+                            </label>
+                            <textarea
+                              value={enrollmentInput}
+                              onChange={(e) => {
+                                setEnrollmentInput(e.target.value);
+                                setEnrollmentError(null);
+                              }}
+                              placeholder="pjb294@cornell.edu,,,&#10;pjb294@cornell.edu, INSTRUCTOR,,&#10;pjb294@cornell.edu, TA,,&#10;pjb294@cornell.edu,,Peter Bidoshi,&#10;pjb294@cornell.edu,,,Team 3&#10;student1@cornell.edu, STUDENT, John Doe, Team A"
+                              className="w-full h-32 p-3 border rounded-md text-sm"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Format: email, role, name, team_name (all
+                              optional except email). Leave fields blank between
+                              commas to skip them. Default role is STUDENT.
+                              Staff roles include <span className="font-medium text-foreground">INSTRUCTOR</span>,{' '}
+                              <span className="font-medium text-foreground">TA</span>, and{' '}
+                              <span className="font-medium text-foreground">VIEWER</span>.
+                            </p>
+                            {enrollmentError && (
+                              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">
+                                {enrollmentError}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button onClick={handleAddEnrollments} size="sm">
+                              Add Members
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                setShowAddEnrollments(false);
+                                setEnrollmentError(null);
+                              }}
+                              size="sm"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  </CardContent>
+                </Card>
+
                 {/* Course Visibility Section */}
                 <Card>
                   <CardHeader>
@@ -1860,10 +1887,10 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                     <div className="flex justify-end">
                       <Button
                         onClick={handleSaveVisibilitySettings}
-                        disabled={updateCourseOffering.isPending}
+                        disabled={courseOfferingsUpdating}
                         className="bg-red-700 hover:bg-red-800 text-white"
                       >
-                        {updateCourseOffering.isPending
+                        {courseOfferingsUpdating
                           ? 'Saving...'
                           : 'Save Changes'}
                       </Button>
@@ -2090,11 +2117,11 @@ student2@cornell.edu,STUDENT,Jane Smith,Team A`;
                           <Button
                             variant="destructive"
                             onClick={handleDeleteCourseOffering}
-                            disabled={deleteCourseOffering.isPending}
+                            disabled={courseOfferingsDeleting}
                             className="bg-red-600 hover:bg-red-700 text-white"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
-                            {deleteCourseOffering.isPending
+                            {courseOfferingsDeleting
                               ? 'Deleting...'
                               : 'Delete Course Offering'}
                           </Button>

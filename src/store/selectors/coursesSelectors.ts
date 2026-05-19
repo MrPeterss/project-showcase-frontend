@@ -4,7 +4,8 @@ import type { Course } from '@/services'
 // Basic selectors
 export const selectAllCourses = (state: RootState) => state.courses.courses
 export const selectSelectedCourse = (state: RootState) => state.courses.selectedCourse
-export const selectSelectedSemesterId = (state: RootState) => state.courses.selectedSemesterId
+export const selectSelectedSemesterId = (state: RootState) =>
+  state.coursesUi.selectedSemesterId
 export const selectCoursesLoading = (state: RootState) => state.courses.isLoading
 export const selectCoursesError = (state: RootState) => state.courses.error
 

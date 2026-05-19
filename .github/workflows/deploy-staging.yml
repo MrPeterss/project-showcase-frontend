@@ -16,10 +16,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: 'yarn'
+          cache: 'npm'
           
       - name: Install dependencies
-        run: yarn install
+        run: npm ci
         
       - name: Build project directly to target directory
       
@@ -27,7 +27,7 @@ jobs:
           set -a
           source ${{ secrets.ENV_FILE_PATH }}
           set +a
-          yarn build --outDir ${{ secrets.DISTRIBUTION_PATH }} --emptyOutDir
+          npm run build -- --outDir ${{ secrets.DISTRIBUTION_PATH }} --emptyOutDir
         
       - name: Reload nginx
         run: |

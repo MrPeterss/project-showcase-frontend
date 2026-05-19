@@ -12,16 +12,17 @@ import {
   ReferenceLine,
 } from 'recharts';
 import type { MouseHandlerDataParam } from 'recharts';
-import { useCourseContext } from '@/components/CourseLayout';
-import { useTeamsByOffering } from '@/hooks/useTeams';
+import { useCourseShell } from '@/hooks/useCourseShell';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import {
-  useSparkKeys,
-  useSparkKeyStats,
-  useSparkAggregatedKeysStats,
-  useIssueSparkKeys,
-  useRevokeSparkKey,
-  useRevokeMultipleSparkKeys,
-} from '@/hooks/useSparkKeys';
+  fetchSparkAggregatedStats,
+  fetchSparkKeyStats,
+  fetchSparkKeysForOffering,
+  revokeSparkKey,
+  revokeSparkKeysBatch,
+} from '@/store/thunks/sparkThunks';
+import { fetchTeamsByOffering } from '@/store/thunks/teamsThunks';
+import { services } from '@/services';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1142,12 +1143,21 @@ function SparkUsageChartsContent({
   );
 }
 
+function sparkStatsCacheKey(offeringId: number, sparkKeyId: number) {
+  return `${offeringId}:${sparkKeyId}`;
+}
+
 function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
-  const {
-    data: stats,
-    isLoading,
-    error,
-  } = useSparkKeyStats(offeringId, sparkKeyId);
+  const dispatch = useAppDispatch();
+  const cacheKey = sparkStatsCacheKey(offeringId, sparkKeyId);
+  const stats = useAppSelector((s) => s.spark.statsByKey[cacheKey]);
+  const isLoading = useAppSelector(
+    (s) => s.spark.statsLoadingByKey[cacheKey] ?? false,
+  );
+
+  useEffect(() => {
+    void dispatch(fetchSparkKeyStats({ offeringId, sparkKeyId }));
+  }, [dispatch, offeringId, sparkKeyId]);
 
   if (isLoading) {
     return (
@@ -1158,7 +1168,7 @@ function SparkKeyStatsPanel({ offeringId, sparkKeyId }: StatsPanel) {
     );
   }
 
-  if (error || !stats) {
+  if (!stats) {
     return (
       <div className="flex items-center gap-2 py-4 text-sm text-red-600">
         <AlertTriangle className="h-4 w-4" />
@@ -1181,8 +1191,17 @@ function topUserLabel(u: SparkTopUser): string {
 }
 
 function SparkOfferingUsageOverview({ offeringId }: { offeringId: number }) {
-  const { data: agg, isLoading, error } =
-    useSparkAggregatedKeysStats(offeringId);
+  const dispatch = useAppDispatch();
+  const agg = useAppSelector(
+    (s) => s.spark.aggregatedStatsByOffering[offeringId],
+  );
+  const isLoading = useAppSelector(
+    (s) => s.spark.aggregatedLoadingByOffering[offeringId] ?? false,
+  );
+
+  useEffect(() => {
+    void dispatch(fetchSparkAggregatedStats(offeringId));
+  }, [dispatch, offeringId]);
 
   if (isLoading) {
     return (
@@ -1193,7 +1212,7 @@ function SparkOfferingUsageOverview({ offeringId }: { offeringId: number }) {
     );
   }
 
-  if (error) {
+  if (!agg) {
     return (
       <div className="mb-8 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3 text-sm text-red-800">
         <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -1201,8 +1220,6 @@ function SparkOfferingUsageOverview({ offeringId }: { offeringId: number }) {
       </div>
     );
   }
-
-  if (!agg) return null;
 
   return (
     <div className="mb-8 overflow-hidden rounded-xl border border-gray-200 bg-white">
@@ -1314,7 +1331,8 @@ function IssueKeysModal({
   offeringId,
   teams,
 }: IssueKeysModalProps) {
-  const issueKeys = useIssueSparkKeys(offeringId);
+  const dispatch = useAppDispatch();
+  const [isIssuing, setIsIssuing] = useState(false);
 
   const [target, setTarget] = useState<IssueTarget>('all');
   const [selectedTeamIds, setSelectedTeamIds] = useState<Set<number>>(
@@ -1382,7 +1400,10 @@ function IssueKeysModal({
     }
 
     try {
-      const response = await issueKeys.mutateAsync(data);
+      setIsIssuing(true);
+      const response = await services.spark.issueKeys(offeringId, data);
+      await dispatch(fetchSparkKeysForOffering(offeringId));
+      await dispatch(fetchSparkAggregatedStats(offeringId));
       const raw = response.data as unknown;
       const issued: IssueSparkKeyResult[] = Array.isArray(raw)
         ? (raw as IssueSparkKeyResult[])
@@ -1401,11 +1422,13 @@ function IssueKeysModal({
           err?.message ||
           'Failed to issue keys. Please try again.',
       );
+    } finally {
+      setIsIssuing(false);
     }
   };
 
   const handleClose = () => {
-    if (!issueKeys.isPending) {
+    if (!isIssuing) {
       setTarget('all');
       setSelectedTeamIds(new Set());
       setScope('PRODUCTION');
@@ -1607,16 +1630,16 @@ function IssueKeysModal({
               type="button"
               variant="outline"
               onClick={handleClose}
-              disabled={issueKeys.isPending}
+              disabled={isIssuing}
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={issueKeys.isPending}
+              disabled={isIssuing}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {issueKeys.isPending ? (
+              {isIssuing ? (
                 <span className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Issuing…
@@ -1651,19 +1674,22 @@ function RevokeConfirmModal({
   offeringId,
   onSuccess,
 }: RevokeConfirmModalProps) {
-  const revokeOne = useRevokeSparkKey(offeringId);
-  const revokeMany = useRevokeMultipleSparkKeys(offeringId);
-
-  const isPending = revokeOne.isPending || revokeMany.isPending;
+  const dispatch = useAppDispatch();
+  const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState('');
 
   const handleConfirm = async () => {
     setError('');
     try {
+      setIsPending(true);
       if (keyIds.length === 1) {
-        await revokeOne.mutateAsync(keyIds[0]);
+        await dispatch(
+          revokeSparkKey({ offeringId, sparkKeyId: keyIds[0] }),
+        ).unwrap();
       } else {
-        await revokeMany.mutateAsync(keyIds);
+        await dispatch(
+          revokeSparkKeysBatch({ offeringId, sparkKeyIds: keyIds }),
+        ).unwrap();
       }
       onSuccess();
       onClose();
@@ -1673,6 +1699,8 @@ function RevokeConfirmModal({
           err?.message ||
           'Failed to revoke key(s). Please try again.',
       );
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -1932,13 +1960,48 @@ function ExpandableKeyRow({
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function CourseSpark() {
-  const { courseId } = useParams<{ courseId: string }>();
+  const { offeringId: offeringIdParam } = useParams<{
+    offeringId: string;
+  }>();
   const navigate = useNavigate();
-  const { offering, effectiveRole } = useCourseContext();
-  const offeringId = Number(courseId);
+  const dispatch = useAppDispatch();
+  const { offering, effectiveRole } = useCourseShell();
 
-  const { data: keys, isLoading, error } = useSparkKeys(offeringId);
-  const { data: teams = [] } = useTeamsByOffering(offeringId);
+  const offeringId = useMemo(() => {
+    const n = offeringIdParam ? parseInt(offeringIdParam, 10) : NaN;
+    return Number.isFinite(n) ? n : NaN;
+  }, [offeringIdParam]);
+
+  const keys = useAppSelector((s) =>
+    !Number.isNaN(offeringId)
+      ? (s.spark.keysByOfferingId[offeringId] ?? [])
+      : [],
+  );
+  const isLoading = useAppSelector((s) =>
+    !Number.isNaN(offeringId)
+      ? (s.spark.keysLoadingByOffering[offeringId] ?? false)
+      : false,
+  );
+  const loadError = useAppSelector((s) =>
+    !Number.isNaN(offeringId)
+      ? s.spark.keysErrorByOffering[offeringId]
+      : null,
+  );
+
+  const teams = useAppSelector((s) =>
+    !Number.isNaN(offeringId)
+      ? (s.teams.byOffering[offeringId] ?? [])
+      : [],
+  );
+
+  useEffect(() => {
+    if (Number.isNaN(offeringId)) return;
+    void dispatch(fetchSparkKeysForOffering(offeringId));
+    void dispatch(fetchTeamsByOffering(offeringId));
+    void dispatch(fetchSparkAggregatedStats(offeringId));
+  }, [dispatch, offeringId]);
+
+  const error = loadError ? new Error(loadError) : null;
 
   const [expandedKeyId, setExpandedKeyId] = useState<number | null>(null);
   const [selectedKeyIds, setSelectedKeyIds] = useState<Set<number>>(new Set());
@@ -1954,11 +2017,11 @@ export default function CourseSpark() {
   const canManage = effectiveRole === 'ADMIN' || effectiveRole === 'INSTRUCTOR';
 
   useEffect(() => {
-    if (!courseId || !effectiveRole) return;
+    if (!offeringIdParam || !effectiveRole) return;
     if (!canAccessSparkOfferingRoute(effectiveRole)) {
-      navigate(`/courses/${courseId}`, { replace: true });
+      navigate(`/courses/${offeringIdParam}`, { replace: true });
     }
-  }, [courseId, effectiveRole, navigate]);
+  }, [offeringIdParam, effectiveRole, navigate]);
 
   const activeKeys = useMemo(
     () => (keys ?? []).filter((k) => k.isActive !== false),

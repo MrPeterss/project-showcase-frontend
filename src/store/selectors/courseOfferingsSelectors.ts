@@ -20,7 +20,7 @@ export const selectCourseOfferingsError = createSelector(
 
 export const selectCourseOfferingsBySelectedSemester = createSelector(
   (state: RootState) => state.courseOfferings.offerings,
-  (state: RootState) => state.courses.selectedSemesterId,
+  (state: RootState) => state.coursesUi.selectedSemesterId,
   (offerings, selectedSemesterId) => {
     if (!selectedSemesterId) return offerings
     return offerings.filter(o => o.semesterId.toString() === selectedSemesterId)

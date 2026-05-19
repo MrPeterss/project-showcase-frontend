@@ -1,6 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { setSelectedSemesterId } from '@/store/slices/coursesSlice';
+import { setSelectedSemesterId } from '@/store/slices/coursesUiSlice';
 import { fetchCourseOfferings } from '@/store/thunks/courseOfferingsThunks';
 import { fetchSemesters } from '@/store/thunks/semestersThunks';
 import {

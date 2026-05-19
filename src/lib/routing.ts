@@ -1,24 +1,18 @@
-import type { Role } from '@/services/types'
+import type { Role } from '@/services/types';
+
+/** Default post-login landing route by global role. */
+export function getRouteForRole(role: Role): string {
+  if (role === 'ADMIN') return '/admin';
+  return '/courses';
+}
 
 /**
- * Returns the appropriate route for a user based on their role
- * @param role - The user's role (ADMIN, INSTRUCTOR, TA, STUDENT, or VIEWER)
- * @returns The route path the user should be redirected to
+ * Parses a route param as a numeric course offering id, or undefined if invalid/missing.
  */
-export const getRouteForRole = (role: Role): string => {
-  switch (role) {
-    case 'ADMIN':
-      return '/courses'
-    case 'INSTRUCTOR':
-      return '/courses'
-    case 'TA':
-      return '/courses'
-    case 'STUDENT':
-      return '/courses' // Students now also go to courses page first
-    case 'VIEWER':
-      return '/courses' // Viewers also go to courses page first
-    default:
-      // Fallback to courses for any unexpected roles
-      return '/courses'
-  }
+export function parseOfferingIdParam(
+  param: string | undefined,
+): number | undefined {
+  if (param === undefined || param === '') return undefined;
+  const n = parseInt(param, 10);
+  return Number.isFinite(n) ? n : undefined;
 }

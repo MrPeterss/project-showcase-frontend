@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useUpdateTeam } from '@/hooks/useTeams';
+import { useAppDispatch } from '@/store/hooks';
+import { updateTeamByIdThunk } from '@/store/thunks/teamsThunks';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import type { Team } from '@/services/types';
@@ -28,7 +29,7 @@ export const EditTeamModal: React.FC<EditTeamModalProps> = ({
   const [hallOfFame, setHallOfFame] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const updateTeam = useUpdateTeam();
+  const dispatch = useAppDispatch();
 
   // Populate form when team data is available
   useEffect(() => {
@@ -93,14 +94,17 @@ export const EditTeamModal: React.FC<EditTeamModalProps> = ({
     try {
       const emails = parseEmails(emailsInput);
 
-      await updateTeam.mutateAsync({
-        teamId: team.id,
-        data: {
-          name: teamName.trim(),
-          memberEmails: emails,
-          hallOfFame: hallOfFame,
-        },
-      });
+      await dispatch(
+        updateTeamByIdThunk({
+          teamId: team.id,
+          offeringId: team.courseOfferingId,
+          data: {
+            name: teamName.trim(),
+            memberEmails: emails,
+            hallOfFame: hallOfFame,
+          },
+        }),
+      ).unwrap();
 
       // Call success callback
       if (onSuccess) {

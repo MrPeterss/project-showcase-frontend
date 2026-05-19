@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { useCreateTeam } from '@/hooks/useTeams';
+import { useAppDispatch } from '@/store/hooks';
+import { createTeamForOffering } from '@/store/thunks/teamsThunks';
 import { Modal, ModalFooter } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 
@@ -27,7 +28,7 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const createTeam = useCreateTeam(courseOfferingId);
+  const dispatch = useAppDispatch();
 
   const parseEmails = (input: string): string[] => {
     // Split by comma, semicolon, or newline, then trim and filter empty strings
@@ -79,11 +80,16 @@ export const NewTeamModal: React.FC<NewTeamModalProps> = ({
 
     try {
       const emails = parseEmails(emailsInput);
-      await createTeam.mutateAsync({
-        name: teamName.trim(),
-        memberEmails: emails,
-        courseOfferingId,
-      });
+      await dispatch(
+        createTeamForOffering({
+          offeringId: courseOfferingId,
+          data: {
+            name: teamName.trim(),
+            memberEmails: emails,
+            courseOfferingId,
+          },
+        }),
+      ).unwrap();
 
       // Reset form
       setTeamName('');

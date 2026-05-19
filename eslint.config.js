@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'coverage']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -18,6 +18,13 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      // Incremental cleanup: codebase predates strict `no-explicit-any`
+      '@typescript-eslint/no-explicit-any': 'off',
+      // Log parsers intentionally match ANSI escape sequences
+      'no-control-regex': 'off',
+      'react-refresh/only-export-components': 'off',
     },
   },
 ])

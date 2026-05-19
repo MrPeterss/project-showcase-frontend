@@ -4,7 +4,6 @@ import type { Course } from '@/services'
 export interface CoursesState {
   courses: Course[]
   selectedCourse: Course | null
-  selectedSemesterId: string
   isLoading: boolean
   error: string | null
   isCreating: boolean
@@ -15,7 +14,6 @@ export interface CoursesState {
 const initialState: CoursesState = {
   courses: [],
   selectedCourse: null,
-  selectedSemesterId: '',
   isLoading: false,
   error: null,
   isCreating: false,
@@ -65,11 +63,6 @@ const coursesSlice = createSlice({
       state.selectedCourse = action.payload
     },
 
-    // Semester filtering
-    setSelectedSemesterId: (state, action: PayloadAction<string>) => {
-      state.selectedSemesterId = action.payload
-    },
-
     // Async operation states
     setCreating: (state, action: PayloadAction<boolean>) => {
       state.isCreating = action.payload
@@ -87,7 +80,6 @@ const coursesSlice = createSlice({
     clearCourses: (state) => {
       state.courses = []
       state.selectedCourse = null
-      state.selectedSemesterId = ''
       state.error = null
     },
   },
@@ -101,7 +93,6 @@ export const {
   updateCourse,
   removeCourse,
   setSelectedCourse,
-  setSelectedSemesterId,
   setCreating,
   setUpdating,
   setDeleting,

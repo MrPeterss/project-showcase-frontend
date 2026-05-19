@@ -46,7 +46,7 @@ apiClient.interceptors.request.use(
             config.headers.Authorization = `Bearer ${newToken}`
           }
           return config
-        } catch (error) {
+        } catch {
           // Refresh failed, continue with current token (will fail and redirect if needed)
         }
       }

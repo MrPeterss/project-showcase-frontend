@@ -1,1 +1,0 @@
-export { useVerifyToken } from './useSyncUser'

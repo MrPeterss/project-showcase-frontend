@@ -1,4 +1,14 @@
-# React + TypeScript + Vite
+# Project Showcase Frontend
+
+Cornell AppDev frontend for browsing course offerings and managing course-scoped teams, deployments, Spark keys, enrollments, and admin workflows. Built with **React**, **TypeScript**, **Vite**, **Redux Toolkit**, and **React Router**.
+
+**Developer documentation** (how `src/` is organized, module-by-module guides, scripts, and architecture): see **[`docs/README.md`](docs/README.md)**.
+
+---
+
+The sections below are from the Vite + React template and remain useful for tooling reference.
+
+## React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
@@ -21,7 +31,7 @@ export default defineConfig([
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
-      // Other configs...
+      // Other config...
 
       // Remove tseslint.configs.recommended and replace with this
       tseslint.configs.recommendedTypeChecked,
@@ -30,7 +40,7 @@ export default defineConfig([
       // Optionally, add this for stylistic rules
       tseslint.configs.stylisticTypeChecked,
 
-      // Other configs...
+      // Other config...
     ],
     languageOptions: {
       parserOptions: {
@@ -43,7 +53,7 @@ export default defineConfig([
 ])
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific ESLint rules:
 
 ```js
 // eslint.config.js
@@ -55,10 +65,10 @@ export default defineConfig([
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
-      // Other configs...
-      // Enable lint rules for React
+      // Other config...
+      // Enable ESLint rules for React
       reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
+      // Enable ESLint rules for React DOM
       reactDom.configs.recommended,
     ],
     languageOptions: {

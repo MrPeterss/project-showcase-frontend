@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useCourseContext } from '@/components/CourseLayout';
+import { useCourseShell } from '@/hooks/useCourseShell';
 import { useAuth } from '@/hooks/useAuth';
 import {
   ArrowLeft,
@@ -19,12 +19,7 @@ import {
   Star,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  useTeamsByOffering,
-  useMyTeamsByOffering,
-  useDeleteTeam,
-} from '@/hooks/useTeams';
-import { useDashboardTabs } from '@/context/DashboardTabsContext';
+import { addDashboardTab } from '@/store/slices/dashboardTabsSlice';
 import { NewTeamModal, EditTeamModal } from '@/components/modals';
 import type { Team } from '@/services/types';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
@@ -34,10 +29,10 @@ import {
   selectTeamsLoading,
 } from '@/store/selectors/teamsSelectors';
 import {
-  setTeams,
-  setTeamsError,
-  setTeamsLoading,
-} from '@/store/slices/teamsSlice';
+  fetchMyTeamsByOffering,
+  fetchTeamsByOffering,
+  deleteTeamThunk,
+} from '@/store/thunks/teamsThunks';
 import { SortableTable } from '@/components/ui/sortable-table';
 import {
   canAccessAnyTeamDeployDashboard,
@@ -45,50 +40,47 @@ import {
 } from '@/lib/courseRoleAccess';
 
 export default function CourseProjects() {
-  const { courseId } = useParams<{ courseId: string }>();
+  const { offeringId: offeringIdParam } = useParams<{ offeringId: string }>();
   const navigate = useNavigate();
   const {
     offering,
     loading: offeringLoading,
     error: offeringError,
     effectiveRole,
-  } = useCourseContext();
+  } = useCourseShell();
   const { user } = useAuth();
-  const { addTab } = useDashboardTabs();
+  const dispatch = useAppDispatch();
 
   const [isNewTeamModalOpen, setIsNewTeamModalOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [isEditTeamModalOpen, setIsEditTeamModalOpen] = useState(false);
 
-  const dispatch = useAppDispatch();
-
   const offeringId = useMemo(() => {
-    if (!courseId) return undefined;
-    const n = parseInt(courseId, 10);
+    if (!offeringIdParam) return undefined;
+    const n = parseInt(offeringIdParam, 10);
     return isNaN(n) ? undefined : n;
-  }, [courseId]);
+  }, [offeringIdParam]);
 
-  const deleteTeam = useDeleteTeam(offeringId);
+  useEffect(() => {
+    if (!offeringId || !offering) return;
+    void dispatch(fetchTeamsByOffering(offeringId));
+    if (user) {
+      void dispatch(fetchMyTeamsByOffering(offeringId));
+    }
+  }, [dispatch, offeringId, offering, user]);
 
-  // Get user's teams to check if admin is viewing a team they're not part of
-  const { data: myTeams } = useMyTeamsByOffering(
-    offeringId && user ? offeringId : undefined
+  const myTeams = useAppSelector((s) =>
+    offeringId ? s.teams.myByOffering[offeringId] ?? [] : [],
   );
-
-  const {
-    data: teamsData,
-    isLoading: teamsQueryLoading,
-    error: teamsQueryError,
-  } = useTeamsByOffering(offering && offeringId ? offeringId : undefined);
 
   const teams = useAppSelector((state) =>
-    selectTeamsByOffering(state, offeringId)
+    selectTeamsByOffering(state, offeringId),
   );
   const teamsLoading = useAppSelector((state) =>
-    selectTeamsLoading(state, offeringId)
+    selectTeamsLoading(state, offeringId),
   );
   const teamsError = useAppSelector((state) =>
-    selectTeamsError(state, offeringId)
+    selectTeamsError(state, offeringId),
   );
 
   const canManageTeams = isCourseOfferingAdmin(effectiveRole);
@@ -96,30 +88,7 @@ export default function CourseProjects() {
     effectiveRole,
   );
 
-  useEffect(() => {
-    if (!offeringId) return;
-    dispatch(
-      setTeamsLoading({ offeringId, isLoading: Boolean(teamsQueryLoading) })
-    );
-  }, [dispatch, offeringId, teamsQueryLoading]);
-
-  useEffect(() => {
-    if (!offeringId || teamsData === undefined) return;
-    dispatch(setTeams({ offeringId, teams: teamsData }));
-  }, [dispatch, offeringId, teamsData]);
-
-  useEffect(() => {
-    if (!offeringId) return;
-    if (teamsQueryError) {
-      const message =
-        teamsQueryError instanceof Error
-          ? teamsQueryError.message
-          : 'Failed to load teams';
-      dispatch(setTeamsError({ offeringId, error: message }));
-    } else {
-      dispatch(setTeamsError({ offeringId, error: null }));
-    }
-  }, [dispatch, offeringId, teamsQueryError]);
+  const [deletingTeamId, setDeletingTeamId] = useState<number | null>(null);
 
   // Get site URL from environment variable or use window location
   const siteUrl = import.meta.env.VITE_SITE_URL || window.location.hostname;
@@ -329,24 +298,44 @@ export default function CourseProjects() {
                             if (
                               canOpenAnyTeamDashboard &&
                               myTeams &&
-                              !myTeams.some((t: Team) => t.id === team.id)
+                              !myTeams.some((t: Team) => t.id === team.id) &&
+                              offeringId !== undefined
                             ) {
-                              addTab(team.id, team.name);
+                              dispatch(
+                                addDashboardTab({
+                                  offeringId,
+                                  teamId: team.id,
+                                  teamName: team.name,
+                                }),
+                              );
                             }
-                            navigate(`/courses/${courseId}/dashboard/${team.id}`);
+                            navigate(
+                              `/courses/${offeringIdParam}/dashboard/${team.id}`,
+                            );
                           };
 
                           const handleDelete = async () => {
                             if (
                               window.confirm(
-                                `Are you sure you want to delete the team "${team.name}"? This action cannot be undone.`
+                                `Are you sure you want to delete the team "${team.name}"? This action cannot be undone.`,
                               )
                             ) {
+                              if (offeringId === undefined) return;
+                              setDeletingTeamId(team.id);
                               try {
-                                await deleteTeam.mutateAsync(team.id);
+                                await dispatch(
+                                  deleteTeamThunk({
+                                    teamId: team.id,
+                                    offeringId,
+                                  }),
+                                ).unwrap();
                               } catch (error) {
                                 console.error('Error deleting team:', error);
-                                alert('Failed to delete team. Please try again.');
+                                alert(
+                                  'Failed to delete team. Please try again.',
+                                );
+                              } finally {
+                                setDeletingTeamId(null);
                               }
                             }
                           };
@@ -398,7 +387,7 @@ export default function CourseProjects() {
                                         e.stopPropagation();
                                         handleDelete();
                                       }}
-                                      disabled={deleteTeam.isPending}
+                                      disabled={deletingTeamId === team.id}
                                       className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />

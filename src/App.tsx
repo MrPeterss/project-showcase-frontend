@@ -1,7 +1,5 @@
 import './App.css';
 import { Provider } from 'react-redux';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import {
   BrowserRouter,
   Routes,
@@ -10,8 +8,7 @@ import {
   useLocation,
 } from 'react-router-dom';
 import { store } from './store';
-import { queryClient } from './lib/queryClient';
-import { QueryErrorBoundary } from './components/ErrorBoundary';
+import { AppErrorBoundary } from './components/ErrorBoundary';
 import { NavBar } from './components/NavBar';
 import { GlobalHeader } from './components/GlobalHeader';
 import { CourseLayout } from './components/CourseLayout';
@@ -60,7 +57,7 @@ function AppContent() {
       <main className="mx-auto max-w-6xl">
         <Routes>
           <Route path="/courses" element={<Courses />} />
-          <Route path="/courses/:courseId" element={<CourseLayout />}>
+          <Route path="/courses/:offeringId" element={<CourseLayout />}>
             <Route index element={<CourseProjects />} />
             <Route path="dashboard/:teamId" element={<CourseTeamDashboard />} />
             <Route path="dashboard" element={<CourseDashboard />} />
@@ -82,16 +79,11 @@ function AppContent() {
 function App() {
   return (
     <Provider store={store}>
-      <QueryClientProvider client={queryClient}>
-        <QueryErrorBoundary>
-          <BrowserRouter>
-            <AppContent />
-            {import.meta.env.DEV && (
-              <ReactQueryDevtools initialIsOpen={false} />
-            )}
-          </BrowserRouter>
-        </QueryErrorBoundary>
-      </QueryClientProvider>
+      <AppErrorBoundary>
+        <BrowserRouter>
+          <AppContent />
+        </BrowserRouter>
+      </AppErrorBoundary>
     </Provider>
   );
 }

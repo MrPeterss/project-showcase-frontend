@@ -2,34 +2,36 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
-import { useCourseContext } from '@/components/CourseLayout';
+import { useCourseShell } from '@/hooks/useCourseShell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { GraduationCap, Shield, X } from 'lucide-react';
 import { formatSemesterShortName } from '@/lib/semesterUtils';
-import { useMyTeamsByOffering } from '@/hooks/useTeams';
-import { useDashboardTabs } from '@/context/DashboardTabsContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { Role, Semester, Team } from '@/services/types';
+import type { Role, Semester } from '@/services/types';
 import {
   canAccessCourseSettingsRoute,
   canAccessSparkOfferingRoute,
 } from '@/lib/courseRoleAccess';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { fetchMyTeamsByOffering } from '@/store/thunks/teamsThunks';
+import { removeDashboardTab } from '@/store/slices/dashboardTabsSlice';
+import { selectDashboardTabsForOffering } from '@/store/selectors/courseShellSelectors';
 
 interface CourseNavBarProps {
-  courseId: string;
+  offeringIdParam: string;
   courseName: string;
   courseUserRole?: Exclude<Role, 'ADMIN'>;
   semester?: Semester;
 }
 
 function CourseNavBarComponent({
-  courseId,
+  offeringIdParam,
   courseName,
   courseUserRole,
   semester,
@@ -37,37 +39,59 @@ function CourseNavBarComponent({
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const dispatch = useAppDispatch();
   const { viewAsStudent, effectiveRole, toggleViewAsStudent } =
-    useCourseContext();
-  const { openTabs, removeTab, isTabOpen } = useDashboardTabs();
-  const [userTeams, setUserTeams] = useState<Team[]>([]);
-  const [teamsLoading, setTeamsLoading] = useState(true);
+    useCourseShell();
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+
+  const offeringId = Number.isInteger(Number(offeringIdParam))
+    ? parseInt(offeringIdParam, 10)
+    : NaN;
+
+  const userTeams = useAppSelector(
+    (s) =>
+      !Number.isNaN(offeringId) ? s.teams.myByOffering[offeringId] ?? [] : [],
+  );
+  const teamsLoading = useAppSelector(
+    (s) =>
+      !Number.isNaN(offeringId)
+        ? s.teams.myLoadingByOffering[offeringId] ?? false
+        : false,
+  );
+
+  const openTabs = useAppSelector(
+    !Number.isNaN(offeringId)
+      ? selectDashboardTabsForOffering(offeringId)
+      : () => [],
+  );
+
+  useEffect(() => {
+    if (!Number.isNaN(offeringId) && user) {
+      void dispatch(fetchMyTeamsByOffering(offeringId));
+    }
+  }, [dispatch, offeringId, user]);
+
+  const removeTab = (tid: number) => {
+    if (!Number.isNaN(offeringId)) {
+      dispatch(removeDashboardTab({ offeringId, teamId: tid }));
+    }
+  };
 
   const isActive = (path: string) => location.pathname === path;
 
   const handleDashboardClick = (teamId: number) => {
-    navigate(`/courses/${courseId}/dashboard/${teamId}`);
+    navigate(`/courses/${offeringIdParam}/dashboard/${teamId}`);
   };
 
-  // Check if we're on a dashboard route
-  const isOnDashboardRoute = location.pathname.startsWith(`/courses/${courseId}/dashboard`);
-
-  // Fetch teams for the course offering and filter by current user via React Query
-  const offeringId = Number.isInteger(Number(courseId))
-    ? parseInt(courseId, 10)
-    : undefined;
-  const { data: myTeams, isLoading: myTeamsLoading } = useMyTeamsByOffering(
-    offeringId && user ? offeringId : undefined
+  const isOnDashboardRoute = location.pathname.startsWith(
+    `/courses/${offeringIdParam}/dashboard`,
   );
-  useEffect(() => {
-    setTeamsLoading(myTeamsLoading);
-    setUserTeams(myTeams || []);
-  }, [myTeamsLoading, myTeams]);
 
   const isAdmin = user?.role === 'ADMIN';
 
-  const currentTeamIdMatch = location.pathname.match(`/courses/${courseId}/dashboard/(\\d+)`);
+  const currentTeamIdMatch = location.pathname.match(
+    `/courses/${offeringIdParam}/dashboard/(\\d+)`,
+  );
   const currentTeamId = currentTeamIdMatch ? parseInt(currentTeamIdMatch[1], 10) : null;
 
   useEffect(() => {
@@ -76,22 +100,33 @@ function CourseNavBarComponent({
       !viewAsStudent &&
       currentTeamId &&
       isOnDashboardRoute &&
-      !isTabOpen(currentTeamId) &&
+      !openTabs.some((t) => t.teamId === currentTeamId) &&
       userTeams.every((t) => t.id !== currentTeamId)
     ) {
-      navigate(`/courses/${courseId}`, { replace: true });
+      navigate(`/courses/${offeringIdParam}`, { replace: true });
     }
-  }, [isAdmin, viewAsStudent, currentTeamId, isOnDashboardRoute, isTabOpen, userTeams, navigate, courseId]);
+  }, [
+    isAdmin,
+    viewAsStudent,
+    currentTeamId,
+    isOnDashboardRoute,
+    openTabs,
+    userTeams,
+    navigate,
+    offeringIdParam,
+  ]);
 
   const handleCloseTab = (e: React.MouseEvent, teamId: number) => {
     e.preventDefault();
     e.stopPropagation();
     
-    const isCurrentlyOnTab = location.pathname === `/courses/${courseId}/dashboard/${teamId}`;
+    const isCurrentlyOnTab =
+      location.pathname ===
+      `/courses/${offeringIdParam}/dashboard/${teamId}`;
     removeTab(teamId);
-    
+
     if (isCurrentlyOnTab) {
-      navigate(`/courses/${courseId}`, { replace: true });
+      navigate(`/courses/${offeringIdParam}`, { replace: true });
     }
   };
 
@@ -103,20 +138,20 @@ function CourseNavBarComponent({
 
     if (!normalizedRole) return [];
 
-    const tabs = [{ path: `/courses/${courseId}`, label: 'Projects' }];
+    const tabs = [{ path: `/courses/${offeringIdParam}`, label: 'Projects' }];
 
     const nr =
       normalizedRole !== undefined ? (normalizedRole as Role | string) : undefined;
 
     if (isAdmin && !viewAsStudent) {
-      tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
-      tabs.push({ path: `/courses/${courseId}/spark`, label: 'Spark' });
+      tabs.push({ path: `/courses/${offeringIdParam}/settings`, label: 'Settings' });
+      tabs.push({ path: `/courses/${offeringIdParam}/spark`, label: 'Spark' });
     } else if (nr) {
       if (canAccessCourseSettingsRoute(nr)) {
-        tabs.push({ path: `/courses/${courseId}/settings`, label: 'Settings' });
+        tabs.push({ path: `/courses/${offeringIdParam}/settings`, label: 'Settings' });
       }
       if (canAccessSparkOfferingRoute(nr)) {
-        tabs.push({ path: `/courses/${courseId}/spark`, label: 'Spark' });
+        tabs.push({ path: `/courses/${offeringIdParam}/spark`, label: 'Spark' });
       }
     }
 
@@ -206,7 +241,7 @@ function CourseNavBarComponent({
               <>
                 {userTeams.length === 1 ? (
                   <Link
-                    to={`/courses/${courseId}/dashboard/${userTeams[0].id}`}
+                    to={`/courses/${offeringIdParam}/dashboard/${userTeams[0].id}`}
                     className={cn(
                       'relative px-1 py-2 text-sm font-medium transition-colors hover:text-foreground',
                       isOnDashboardRoute
@@ -245,7 +280,7 @@ function CourseNavBarComponent({
                       onCloseAutoFocus={(e) => e.preventDefault()}
                     >
                       {userTeams.map((team) => {
-                        const teamDashboardPath = `/courses/${courseId}/dashboard/${team.id}`;
+                        const teamDashboardPath = `/courses/${offeringIdParam}/dashboard/${team.id}`;
                         const isTeamActive = location.pathname === teamDashboardPath;
                         return (
                           <DropdownMenuItem
@@ -273,7 +308,7 @@ function CourseNavBarComponent({
             {isAdmin && !viewAsStudent && openTabs.length > 0 && (
               <>
                 {openTabs.map((tab) => {
-                  const tabPath = `/courses/${courseId}/dashboard/${tab.teamId}`;
+                  const tabPath = `/courses/${offeringIdParam}/dashboard/${tab.teamId}`;
                   const isTabActive = location.pathname === tabPath;
                   
                   return (

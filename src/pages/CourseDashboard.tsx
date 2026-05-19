@@ -1,12 +1,12 @@
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useCourseContext } from '@/components/CourseLayout';
+import { useCourseShell } from '@/hooks/useCourseShell';
 import { ArrowLeft } from 'lucide-react';
 
 export default function CourseDashboard() {
   const navigate = useNavigate();
-  const { offering, loading: offeringLoading } = useCourseContext();
+  const { offering, loading: offeringLoading } = useCourseShell();
 
   return (
     <div className="container mx-auto p-6">

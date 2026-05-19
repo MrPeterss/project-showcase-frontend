@@ -1,5 +1,4 @@
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
-import { QueryErrorResetBoundary } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -77,17 +76,11 @@ class ErrorBoundary extends Component<Props, State> {
   }
 }
 
-// Query Error Boundary Wrapper
-export const QueryErrorBoundary: React.FC<{ children: ReactNode }> = ({
+export const AppErrorBoundary: React.FC<{ children: ReactNode }> = ({
   children,
-}) => {
-  return (
-    <QueryErrorResetBoundary>
-      <ErrorBoundary>
-        <div className="query-error-boundary">{children}</div>
-      </ErrorBoundary>
-    </QueryErrorResetBoundary>
-  );
-};
+}) => <ErrorBoundary>{children}</ErrorBoundary>;
+
+/** @deprecated Use AppErrorBoundary */
+export const QueryErrorBoundary = AppErrorBoundary;
 
 export default ErrorBoundary;

@@ -277,7 +277,7 @@ export const projectServices = {
                 // Don't return - continue reading stream for any remaining logs
               }
             }
-          } catch (parseError) {
+          } catch {
             // Not JSON - treat as plain text log line
             const logMessage = jsonData.trim()
             if (logMessage) {

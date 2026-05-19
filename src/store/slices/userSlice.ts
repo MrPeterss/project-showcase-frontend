@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
-import type { User, Role } from '@/services'
+import type { User } from '@/services'
 
 export interface UserState {
   user: User | null
@@ -15,18 +15,20 @@ const initialState: UserState = {
   tokenRefreshTrigger: 0,
 }
 
-// Transform backend user response to match frontend User type
-const transformUser = (userData: any): User | null => {
-  if (!userData) return null
-  
+/** Exported for unit tests — normalizes `{ isAdmin }` payloads from the backend. */
+export const transformUser = (userData: unknown): User | null => {
+  if (!userData || typeof userData !== 'object') return null
+
+  const u = userData as Record<string, unknown>
+
   // If backend returns isAdmin boolean, convert to role
-  if (userData.isAdmin !== undefined && !userData.role) {
+  if (u.isAdmin !== undefined && u.role === undefined) {
     return {
-      ...userData,
-      role: userData.isAdmin ? 'ADMIN' : 'STUDENT' as Role,
+      ...(u as unknown as User),
+      role: u.isAdmin ? 'ADMIN' : 'STUDENT',
     }
   }
-  
+
   return userData as User
 }
 
@@ -34,7 +36,7 @@ const userSlice = createSlice({
   name: 'user',
   initialState,
   reducers: {
-    setUser: (state, action: PayloadAction<any>) => {
+    setUser: (state, action: PayloadAction<unknown>) => {
       state.user = transformUser(action.payload)
       state.error = null
     },
