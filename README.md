@@ -1,6 +1,6 @@
 # Project Showcase Frontend
 
-Cornell AppDev frontend for browsing course offerings and managing course-scoped teams, deployments, Spark keys, enrollments, and admin workflows. Built with **React**, **TypeScript**, **Vite**, **Redux Toolkit**, and **React Router**.
+Frontend for **INFO 4300 — Project Showcase**: browse course offerings and manage course-scoped teams, deployments, Spark keys, enrollments, and admin workflows. Built with **React**, **TypeScript**, **Vite**, **Redux Toolkit**, and **React Router**.
 
 **Developer documentation** (how `src/` is organized, module-by-module guides, scripts, and architecture): see **[`docs/README.md`](docs/README.md)**.
 
